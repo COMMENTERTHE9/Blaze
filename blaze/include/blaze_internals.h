@@ -1,0 +1,600 @@
+// BLAZE INTERNAL DEFINITIONS - No external dependencies
+
+#ifndef BLAZE_INTERNALS_H
+#define BLAZE_INTERNALS_H
+
+#include "blaze_types.h"
+#include "symbol_table_types.h"
+#include "blaze_stdlib.h"
+
+// Configuration
+#define MAX_TOKENS 4096
+#define MAX_CODE_SIZE 65536
+#define MAX_STACK_SIZE 1024
+
+// System calls for Linux x64
+#define SYS_WRITE 1
+#define SYS_EXIT 60
+#define SYS_MMAP 9
+#define SYS_MUNMAP 11
+#define SYS_OPEN 2
+#define SYS_CLOSE 3
+#define SYS_READ 0
+
+// File operation flags
+#define O_RDONLY 0
+#define O_WRONLY 1
+#define O_RDWR 2
+#define O_CREAT 0100
+#define O_TRUNC 01000
+
+// Inline system call wrapper
+static inline long syscall6(long num, long a1, long a2, long a3, long a4, long a5, long a6) {
+    long ret;
+    __asm__ volatile (
+        "mov %1, %%rax\n"
+        "mov %2, %%rdi\n"
+        "mov %3, %%rsi\n"
+        "mov %4, %%rdx\n"
+        "mov %5, %%r10\n"
+        "mov %6, %%r8\n"
+        "mov %7, %%r9\n"
+        "syscall\n"
+        "mov %%rax, %0\n"
+        : "=r"(ret)
+        : "r"(num), "r"(a1), "r"(a2), "r"(a3), "r"(a4), "r"(a5), "r"(a6)
+        : "rax", "rdi", "rsi", "rdx", "r10", "r8", "r9", "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
+// Character types for fast lexing
+enum {
+    CHAR_WHITESPACE = 1,
+    CHAR_ALPHA = 2,
+    CHAR_DIGIT = 3,
+    CHAR_PIPE = 4,
+    CHAR_SLASH = 5,
+    CHAR_BACKSLASH = 6,
+    CHAR_LT = 7,
+    CHAR_GT = 8,
+    CHAR_JUMP = 9,
+    CHAR_BANG = 10,
+    CHAR_COLON = 11,
+    CHAR_STAR = 12,
+    CHAR_MINUS = 13,
+    CHAR_LBRACKET = 14,
+    CHAR_RBRACKET = 15,
+    CHAR_DOT = 16
+};
+
+// Token types
+typedef enum {
+    // Core operators
+    TOK_LT,              // <
+    TOK_GT,              // >
+    TOK_TIMING_ONTO,     // <<
+    TOK_TIMING_INTO,     // >>
+    TOK_TIMING_BOTH,     // <>
+    
+    // Connectors
+    TOK_CONNECTOR_FWD,   // \>|
+    TOK_CONNECTOR_BWD,   // \<|
+    
+    // Actions
+    TOK_ACTION_START,    // do/
+    TOK_SLASH,           // forward slash
+    TOK_BACKSLASH,       // backslash
+    TOK_FUNC_CLOSE,      // colon-gt
+    
+    // Delimiters
+    TOK_PIPE,            // |
+    TOK_BRACKET_OPEN,    // [
+    TOK_BRACKET_CLOSE,   // ]
+    
+    // Special
+    TOK_JUMP_MARKER,     // ^
+    TOK_GLOBAL_ERROR,    // !-N
+    
+    // Keywords
+    TOK_VAR,             // var.v-
+    TOK_CONST,           // var.c-
+    TOK_VAR_INT,         // var.i-
+    TOK_VAR_FLOAT,       // var.f-
+    TOK_VAR_STRING,      // var.s-
+    TOK_VAR_BOOL,        // var.b-
+    TOK_ARRAY_4D,        // array.4d
+    TOK_FUNC_CAN,        // fucn.can
+    TOK_ERROR_CATCH,     // error.catch
+    TOK_GAP_COMPUTE,     // gap.compute
+    TOK_DECLARE,         // declare
+    
+    // Conditionals
+    TOK_GREATER_THAN,    // *>
+    TOK_LESS_EQUAL,      // *_<
+    TOK_EQUAL,           // *=
+    TOK_NOT_EQUAL,       // *!=
+    
+    // Basic
+    TOK_IDENTIFIER,
+    TOK_NUMBER,
+    TOK_STRING,
+    TOK_MINUS,           // -
+    TOK_STAR,            // *
+    TOK_COMMA,           // ,
+    TOK_PLUS,            // +
+    TOK_DIV,             // / (division, not TOK_SLASH)
+    TOK_LT_CMP,          // < (comparison, not TOK_LT timing)
+    TOK_GT_CMP,          // > (comparison, not TOK_GT timing)
+    TOK_LE,              // <=
+    TOK_GE,              // >=
+    TOK_EQ,              // ==
+    TOK_NE,              // !=
+    
+    // Additional Blaze tokens
+    TOK_DOT,             // .
+    TOK_UNDERSCORE,      // _
+    TOK_AT,              // @
+    TOK_SEMICOLON,       // ;
+    TOK_PERCENT,         // %
+    TOK_EQUALS,          // =
+    TOK_LPAREN,          // (
+    TOK_RPAREN,          // )
+    TOK_LBRACE,          // {
+    TOK_RBRACE,          // }
+    TOK_COLON,           // :
+    TOK_BANG,            // !
+    
+    // Parameter token
+    TOK_PARAM,           // {@param:
+    
+    // Matrix tokens
+    TOK_MATRIX_START,    // [:::
+    
+    // Conditional abbreviations
+    TOK_COND_ENS,        // f.ens or fucn.ens
+    TOK_COND_VER,        // f.ver or fucn.ver
+    TOK_COND_CHK,        // f.chk or fucn.chk
+    TOK_COND_TRY,        // f.try or fucn.try
+    TOK_COND_GRD,        // f.grd or fucn.grd
+    TOK_COND_UNL,        // f.unl or fucn.unl
+    TOK_COND_IF,         // f.if or fucn.if
+    TOK_COND_WHL,        // f.whl or fucn.whl
+    TOK_COND_UNT,        // f.unt or fucn.unt
+    TOK_COND_OBS,        // f.obs or fucn.obs
+    TOK_COND_DET,        // f.det or fucn.det
+    TOK_COND_REC,        // f.rec or fucn.rec
+    TOK_COND_FS,         // f.fs or fucn.fs
+    TOK_COND_RTE,        // f.rte or fucn.rte
+    TOK_COND_MON,        // f.mon or fucn.mon
+    TOK_COND_EVAL,       // f.eval or fucn.eval
+    TOK_COND_DEC,        // f.dec or fucn.dec
+    TOK_COND_ASS,        // f.ass or fucn.ass
+    TOK_COND_MSR,        // f.msr or fucn.msr
+    
+    // Timeline tokens
+    TOK_TIMELINE_DEF,    // timeline-[
+    TOK_TIMELINE_JUMP,   // ^timeline.[
+    TOK_BNC,             // bnc
+    TOK_RECV,            // recv
+    
+    // Fixed point tokens
+    TOK_FIX_P,           // fix.p
+    TOK_F_P,             // f.p
+    
+    // Permanent timeline tokens
+    TOK_TIMELINE_PER,    // timelineper-[
+    TOK_TIMELINE_P,      // timelinep-[
+    TOK_TIMELINE_P_JUMP, // ^timelinep.[
+    
+    // Action tokens  
+    TOK_ACTION_CONTINUE, // /
+    TOK_ACTION_END,      // backslash
+    
+    // Temporal operators
+    TOK_BEFORE,          // <
+    TOK_AFTER,           // >
+    TOK_ONTO,            // <<
+    TOK_INTO,            // >>
+    TOK_BOTH,            // <>
+    
+    // Block end marker
+    TOK_BLOCK_END,       // :>
+    
+    // Time-bridge operators
+    TOK_TIME_BRIDGE_FWD, // >/>
+    TOK_SLOW_FWD,        // >\>
+    TOK_FAST_REWIND,     // </<
+    TOK_SLOW_REWIND,     // <\<
+    
+    // Connectors
+    TOK_FORWARD_CONN,    // \>|
+    TOK_BACKWARD_CONN,   // \<|
+    
+    // Split tokens
+    TOK_C_SPLIT,         // c.split._
+    
+    // Output method tokens
+    TOK_PRINT,           // print/
+    TOK_TXT,             // txt/
+    TOK_OUT,             // out/
+    TOK_FMT,             // fmt/
+    TOK_DYN,             // dyn/
+    
+    // Assembly token
+    TOK_ASM,             // asm/
+    
+    // Function call token
+    TOK_FUNC_CALL,       // ^function_name (for stdlib calls)
+    
+    // Zone tokens
+    TOK_PAST_ZONE,
+    TOK_PRESENT_ZONE,
+    TOK_FUTURE_ZONE,
+    TOK_UNKNOWN_ZONE,
+    
+    // Control
+    TOK_EOF,
+    TOK_ERROR
+} TokenType;
+
+// Token structure - minimal size
+typedef struct {
+    TokenType type;
+    uint32_t start;      // Position in source
+    uint16_t len;        // Length of token
+    uint16_t line;       // Line number for errors
+} Token;
+
+// X64Register is defined in symbol_table_types.h
+
+// Machine code buffer
+typedef struct {
+    uint8_t* code;
+    uint32_t position;
+    uint32_t capacity;
+    
+    // Time-travel state
+    uint64_t temporal_markers[16];
+    uint8_t temporal_count;
+    
+    // Entry point tracking for optimization fixes
+    uint32_t entry_point;
+    uint32_t main_call_offset_pos;
+    bool bss_offsets_need_patch;
+} CodeBuffer;
+
+// GGGX computation state
+typedef struct {
+    // Core metrics
+    uint32_t debreading_efficiency;   // 0-1000 (scaled by 100)
+    uint32_t parallel_potential;      // 0-1000
+    uint32_t cluster_tightness;       // 0-1000
+    
+    // Confidence scores
+    uint16_t confidence_d;            // 0-100
+    uint16_t confidence_p;            // 0-100
+    uint16_t confidence_c;            // 0-100
+    
+    // Results
+    uint32_t gap_index;               // 0-1000
+    uint32_t zone_score;              // Final score
+    bool is_provisional;
+} GGGX_State;
+
+// AST node types
+typedef enum {
+    NODE_PROGRAM,
+    NODE_VAR_DEF,
+    NODE_FUNC_DEF,
+    NODE_ACTION_BLOCK,
+    NODE_DECLARE_BLOCK,
+    NODE_TIMING_OP,
+    NODE_CONDITIONAL,
+    NODE_JUMP,
+    NODE_EXPRESSION,
+    NODE_BINARY_OP,
+    NODE_NUMBER,
+    NODE_FLOAT,
+    NODE_IDENTIFIER,
+    NODE_ARRAY_4D,
+    NODE_ARRAY_4D_DEF,
+    NODE_ARRAY_4D_ACCESS,
+    NODE_GAP_ANALYSIS,
+    NODE_GAP_COMPUTE,
+    NODE_FIXED_POINT,
+    NODE_PERMANENT_TIMELINE,
+    NODE_FLOW_SPEC,
+    NODE_OUTPUT,
+    NODE_STRING,
+    NODE_INLINE_ASM,
+    NODE_FUNC_CALL
+} NodeType;
+
+// AST Node - compact representation
+typedef struct ASTNode {
+    NodeType type;
+    union {
+        // Number literal (integer)
+        int64_t number;
+        
+        // Float literal
+        double float_value;
+        
+        // Identifier
+        struct {
+            uint32_t name_offset;
+            uint16_t name_len;
+        } ident;
+        
+        // Binary operation
+        struct {
+            TokenType op;
+            uint16_t left_idx;
+            uint16_t right_idx;
+        } binary;
+        
+        // Time travel operation
+        struct {
+            TokenType timing_op;
+            uint16_t expr_idx;
+            int32_t temporal_offset;
+        } timing;
+        
+        // 4D array
+        struct {
+            uint16_t name_idx;
+            uint16_t dim_indices[4];
+            uint16_t gap_analysis_idx;
+        } array_4d;
+        
+        // GAP compute
+        struct {
+            uint16_t var_idx;           // Variable being computed
+            uint16_t body_idx;          // Computation body
+            uint16_t missing_list_idx;  // Missing data declarations
+        } gap_compute;
+        
+        // Fixed point
+        struct {
+            uint16_t name_idx;          // Fixed point name
+            uint16_t waiting_count;     // Number of timelines waiting
+            uint16_t condition_idx;     // Optional condition
+        } fixed_point;
+        
+        // Flow specification
+        struct {
+            uint16_t timeline_idx;      // Timeline being made permanent
+            uint16_t rate;              // Rate in Hz (0 = unlimited)
+            uint8_t flow_type;          // PERMANENT, RATE_LIMITED, etc
+        } flow_spec;
+        
+        // Output operation
+        struct {
+            TokenType output_type;      // PRINT, TXT, OUT, FMT, DYN
+            uint16_t content_idx;       // String or expression to output
+            uint16_t next_output;       // For chained output methods
+        } output;
+        
+        // Inline assembly
+        struct {
+            uint32_t code_offset;       // Offset in string pool for asm code
+            uint16_t code_len;          // Length of assembly code
+        } inline_asm;
+    } data;
+} ASTNode;
+
+// Parser state structure
+typedef struct Parser {
+    Token* tokens;
+    uint32_t count;
+    uint32_t current;
+    
+    // AST node pool - pre-allocated
+    ASTNode* nodes;
+    uint32_t node_count;
+    uint32_t node_capacity;
+    
+    // String pool for identifiers
+    char* string_pool;
+    uint32_t string_pos;
+    
+    // Source code reference
+    const char* source;
+    
+    // Error state
+    bool has_error;
+    uint32_t error_pos;
+} Parser;
+
+// Symbol table structures are defined in symbol_table_types.h
+
+// Platform types for cross-compilation
+typedef enum {
+    PLATFORM_LINUX,
+    PLATFORM_WINDOWS,
+    PLATFORM_MACOS
+} Platform;
+
+// Memory management structures (forward declarations only)
+typedef struct TemporalMemory TemporalMemory;
+typedef struct Array4D Array4D;
+typedef struct RuntimeValueStruct RuntimeValue;
+
+// Function prototypes
+uint32_t lex_blaze(const char* input, uint32_t len, Token* output);
+void emit_x64_instruction(CodeBuffer* buf, uint8_t* bytes, uint32_t len);
+void analyze_gggx(Token* tokens, uint32_t count, GGGX_State* state);
+uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool, 
+                     uint32_t pool_size, char* string_pool, const char* source);
+bool resolve_time_travel(ASTNode* nodes, uint16_t root_idx, uint16_t node_count, 
+                        char* string_pool, ExecutionStep* execution_plan);
+void debug_print_ast(ASTNode* nodes, uint16_t root, char* string_pool);
+bool build_symbol_table(SymbolTable* table, ASTNode* nodes, uint16_t root_idx,
+                       uint16_t node_count, char* string_pool);
+void debug_print_symbols(SymbolTable* table);
+
+// Memory management functions
+void temporal_memory_init(void* stack_base, uint32_t stack_size);
+void* temporal_alloc_var(const char* name, uint32_t size, TimeZone zone);
+void temporal_create_link(const char* var_name, TimeZone from_zone, TimeZone to_zone,
+                         int32_t temporal_offset);
+void* temporal_resolve_var(const char* name, bool needs_future_value);
+Array4D* temporal_alloc_array4d(uint32_t x, uint32_t y, uint32_t z, uint32_t t,
+                               uint32_t elem_size);
+void* temporal_array4d_access(Array4D* arr, uint32_t x, uint32_t y, uint32_t z, uint32_t t);
+MemoryPrediction temporal_predict_memory(ASTNode* nodes, uint16_t node_idx, 
+                                       SymbolTable* symbols);
+void temporal_memory_stats(uint32_t* past_used, uint32_t* present_used, 
+                          uint32_t* future_used, uint16_t* link_count);
+
+// Runtime functions
+void runtime_init(uint32_t memory_size);
+void runtime_store_value(const char* name, RuntimeValue* value, bool to_future);
+RuntimeValue runtime_load_value(const char* name, bool from_future);
+void runtime_debug_memory(void);
+
+// Inline helpers for machine code emission
+static inline void emit_byte(CodeBuffer* buf, uint8_t byte) {
+    if (buf->position < buf->capacity) {
+        buf->code[buf->position++] = byte;
+    }
+}
+
+static inline void emit_word(CodeBuffer* buf, uint16_t word) {
+    emit_byte(buf, word & 0xFF);
+    emit_byte(buf, (word >> 8) & 0xFF);
+}
+
+static inline void emit_dword(CodeBuffer* buf, uint32_t dword) {
+    emit_byte(buf, dword & 0xFF);
+    emit_byte(buf, (dword >> 8) & 0xFF);
+    emit_byte(buf, (dword >> 16) & 0xFF);
+    emit_byte(buf, (dword >> 24) & 0xFF);
+}
+
+static inline void emit_qword(CodeBuffer* buf, uint64_t qword) {
+    emit_dword(buf, qword & 0xFFFFFFFF);
+    emit_dword(buf, (qword >> 32) & 0xFFFFFFFF);
+}
+
+// X64 instruction encoding helpers
+#define REX_W 0x48
+#define REX_R 0x44
+#define REX_X 0x42
+#define REX_B 0x41
+
+#define MODRM(mod, reg, rm) (((mod) << 6) | ((reg) << 3) | (rm))
+
+// Simple print functions for debugging
+static inline void print_str(const char* str) {
+    const char* p = str;
+    int len = 0;
+    while (p[len]) len++;
+    syscall6(SYS_WRITE, 1, (long)str, len, 0, 0, 0);
+}
+
+static inline void print_num(long num) {
+    char buf[32];
+    int i = 30;
+    buf[31] = '\0';
+    
+    if (num == 0) {
+        buf[i--] = '0';
+    } else {
+        bool neg = num < 0;
+        if (neg) num = -num;
+        
+        while (num > 0 && i >= 0) {
+            buf[i--] = '0' + (num % 10);
+            num /= 10;
+        }
+        
+        if (neg && i >= 0) buf[i--] = '-';
+    }
+    
+    print_str(&buf[i + 1]);
+}
+
+// Additional function declarations for codegen
+void emit_mov_reg_imm64(CodeBuffer* buf, X64Register reg, uint64_t value);
+void emit_mov_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
+void emit_mov_mem_reg(CodeBuffer* buf, X64Register base, int32_t offset, X64Register src);
+void emit_mov_reg_mem(CodeBuffer* buf, X64Register dst, X64Register base, int32_t offset);
+void emit_add_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
+void emit_sub_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
+void emit_add_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
+void emit_sub_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
+void emit_mul_reg(CodeBuffer* buf, X64Register reg);
+void emit_div_reg(CodeBuffer* buf, X64Register reg);
+void emit_cmp_reg_reg(CodeBuffer* buf, X64Register r1, X64Register r2);
+void emit_push_reg(CodeBuffer* buf, X64Register reg);
+void emit_pop_reg(CodeBuffer* buf, X64Register reg);
+void emit_rex(CodeBuffer* buf, bool w, bool r, bool x, bool b);
+void emit_syscall(CodeBuffer* buf);
+void emit_call_reg(CodeBuffer* buf, X64Register reg);
+void emit_cmp_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
+void emit_jmp_rel32(CodeBuffer* buf, int32_t offset);
+void emit_je_rel32(CodeBuffer* buf, int32_t offset);
+void emit_jne_rel32(CodeBuffer* buf, int32_t offset);
+void emit_jg_rel32(CodeBuffer* buf, int32_t offset);
+void emit_jle_rel32(CodeBuffer* buf, int32_t offset);
+void emit_jge_rel32(CodeBuffer* buf, int32_t offset);
+void emit_lea(CodeBuffer* buf, X64Register dst, X64Register base, int32_t offset);
+void emit_xor_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
+void emit_inc_reg(CodeBuffer* buf, X64Register reg);
+void emit_test_reg_reg(CodeBuffer* buf, X64Register reg1, X64Register reg2);
+void emit_jz(CodeBuffer* buf, int8_t offset);
+void emit_jnz(CodeBuffer* buf, int8_t offset);
+void emit_neg_reg(CodeBuffer* buf, X64Register reg);
+
+// Memory initialization codegen
+void generate_runtime_init(CodeBuffer* buf);
+void generate_arena_alloc(CodeBuffer* buf, X64Register size_reg, X64Register result_reg);
+void generate_rc_alloc(CodeBuffer* buf, X64Register size_reg, X64Register result_reg);
+void generate_temporal_alloc(CodeBuffer* buf, TimeZone zone, X64Register size_reg, X64Register result_reg);
+void generate_arena_enter_action(CodeBuffer* buf);
+void generate_arena_exit_action(CodeBuffer* buf);
+void generate_rc_inc(CodeBuffer* buf, X64Register ptr_reg);
+void generate_rc_dec(CodeBuffer* buf, X64Register ptr_reg);
+
+// Symbol table functions
+void symbol_table_init(SymbolTable* table, char* string_pool);
+void symbol_push_scope(SymbolTable* table, bool is_temporal, int32_t temporal_shift);
+Symbol* symbol_lookup(SymbolTable* table, const char* name, uint16_t name_len, bool search_parent);
+Symbol* symbol_add_array_4d(SymbolTable* table, const char* name, 
+                           uint32_t x, uint32_t y, uint32_t z, uint32_t t);
+
+// File I/O helpers
+int syscall_open(const char* filename, int flags, int mode);
+int syscall_close(int fd);
+int syscall_write(int fd, const void* buf, size_t count);
+uint32_t str_len(const char* s);
+
+// Platform utilities
+const char* get_platform_name(Platform platform);
+
+// Array4D functions
+Array4D* array4d_create(uint32_t x, uint32_t y, uint32_t z, uint32_t t, size_t elem_size);
+void array4d_set(Array4D* arr, int x, int y, int z, int t, void* value);
+bool test_bit(uint8_t* map, size_t bit_idx);
+
+// Memory management functions from memory_manager.c
+void memory_init(void);
+void* arena_alloc(uint64_t size);
+void arena_enter_action(void);
+void arena_exit_action(void);
+void* rc_alloc(uint64_t size);
+void rc_inc(void* ptr);
+void rc_dec(void* ptr);
+uint16_t rc_count(void* ptr);
+void* temporal_alloc(TimeZone zone, uint64_t size);
+void* temporal_move(void* ptr, TimeZone from_zone, TimeZone to_zone);
+void memory_stats(void);
+void temporal_gc(void);
+void memory_test(void);
+
+// Debug functions
+void debug_print_tokens(Token* tokens, uint32_t count, const char* source);
+
+#endif // BLAZE_INTERNALS_H

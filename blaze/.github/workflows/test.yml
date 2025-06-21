@@ -1,0 +1,40 @@
+name: Blaze Compiler Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-optimizations:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Test -O0 build (debug)
+      run: |
+        make clean
+        make DEBUG=1
+        ./blaze_debug tests/min.blaze out
+        echo "✅ -O0 build passed"
+    
+    - name: Test -O1 build (default)
+      run: |
+        make clean
+        make
+        ./blaze tests/min.blaze out
+        # Verify parameter passing is correct
+        if ./blaze tests/min.blaze out 2>&1 | grep -q "lex_blaze called with len=22"; then
+          echo "✅ -O1 parameter passing verified"
+        else
+          echo "❌ -O1 parameter corruption detected!"
+          exit 1
+        fi
+    
+    - name: Test compiled output
+      run: |
+        ./blaze tests/hello.blaze hello_out
+        ./hello_out | grep -q "Hello" || exit 1
+        echo "✅ Compiled output works"
