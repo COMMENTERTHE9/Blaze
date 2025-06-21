@@ -196,6 +196,20 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
         uint8_t ch = input[pos];
         uint8_t ch_type = char_types[ch];
         
+        if (ch == '*') {
+            print_str("[LEX] Found * at pos=");
+            print_num(pos);
+            print_str(" next char='");
+            if (pos + 1 < len) {
+                char c = input[pos + 1];
+                if (c >= 32 && c <= 126) {
+                    char buf[2] = {c, 0};
+                    print_str(buf);
+                }
+            }
+            print_str("'\n");
+        }
+        
         // Multi-char tokens - hand-rolled state machine
         if (ch == '<') {
             if (pos + 1 < len) {
@@ -262,7 +276,12 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
         }
         else if (ch == '*') {
             if (pos + 1 < len) {
-                if (input[pos + 1] == '>') {
+                if (input[pos + 1] == '*') {
+                    // Exponentiation operator
+                    tok->type = TOK_EXPONENT;
+                    tok->len = 2;
+                    pos += 2;
+                } else if (input[pos + 1] == '>') {
                     tok->type = TOK_GREATER_THAN;
                     tok->len = 2;
                     pos += 2;
@@ -513,6 +532,12 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                 tok->len = 8;
                 pos += 8;
             }
+            else if (pos + 5 <= len && str_equals(&input[pos], "math.", 5)) {
+                // Math function prefix
+                tok->type = TOK_MATH_PREFIX;
+                tok->len = 5;
+                pos += 5;
+            }
             else {
                 // Regular identifier
                 uint32_t start = pos;
@@ -585,7 +610,22 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
         else {
             // Single character token
             switch (ch) {
-                case '|': tok->type = TOK_PIPE; tok->len = 1; pos++; break;
+                case '|': 
+                    // Check for ||. (bitwise) or || (logical)
+                    if (pos + 2 < len && input[pos + 1] == '|' && input[pos + 2] == '.') {
+                        tok->type = TOK_BIT_OR;
+                        tok->len = 3;
+                        pos += 3;
+                    } else if (pos + 1 < len && input[pos + 1] == '|') {
+                        tok->type = TOK_OR;
+                        tok->len = 2;
+                        pos += 2;
+                    } else {
+                        tok->type = TOK_PIPE;
+                        tok->len = 1;
+                        pos++;
+                    }
+                    break;
                 case '/': 
                     // Check if it's division or part of a Blaze operator
                     // Check if preceded by 'do/', 'v/', or output keywords (print/, txt/, out/, fmt/, dyn/, asm/)
@@ -634,10 +674,35 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     break;
                 case '[': tok->type = TOK_BRACKET_OPEN; tok->len = 1; pos++; break;
                 case ']': tok->type = TOK_BRACKET_CLOSE; tok->len = 1; pos++; break;
-                case '^': tok->type = TOK_JUMP_MARKER; tok->len = 1; pos++; break;
+                case '^': 
+                    // Check for ^^
+                    if (pos + 1 < len && input[pos + 1] == '^') {
+                        tok->type = TOK_BIT_XOR;
+                        tok->len = 2;
+                        pos += 2;
+                    } else {
+                        tok->type = TOK_JUMP_MARKER;
+                        tok->len = 1;
+                        pos++;
+                    }
+                    break;
                 case '-': tok->type = TOK_MINUS; tok->len = 1; pos++; break;
                 case '+': tok->type = TOK_PLUS; tok->len = 1; pos++; break;
-                case '*': tok->type = TOK_STAR; tok->len = 1; pos++; break;
+                case '*': 
+                    // Check for **
+                    if (pos + 1 < len && input[pos + 1] == '*') {
+                        print_str("[LEX] Found ** at pos=");
+                        print_num(pos);
+                        print_str("\n");
+                        tok->type = TOK_EXPONENT;
+                        tok->len = 2;
+                        pos += 2;
+                    } else {
+                        tok->type = TOK_STAR;
+                        tok->len = 1;
+                        pos++;
+                    }
+                    break;
                 case '%': tok->type = TOK_PERCENT; tok->len = 1; pos++; break;
                 case ',': tok->type = TOK_COMMA; tok->len = 1; pos++; break;
                 case '(': tok->type = TOK_LPAREN; tok->len = 1; pos++; break;
@@ -655,8 +720,12 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     }
                     break;
                 case '<':
-                    // Check for <= or <<
-                    if (pos + 1 < len && input[pos + 1] == '=') {
+                    // Check for <<<, <=, or <<
+                    if (pos + 2 < len && input[pos + 1] == '<' && input[pos + 2] == '<') {
+                        tok->type = TOK_BIT_LSHIFT;
+                        tok->len = 3;
+                        pos += 3;
+                    } else if (pos + 1 < len && input[pos + 1] == '=') {
                         tok->type = TOK_LE;
                         tok->len = 2;
                         pos += 2;
@@ -671,8 +740,12 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     }
                     break;
                 case '>':
-                    // Check for >= or >>
-                    if (pos + 1 < len && input[pos + 1] == '=') {
+                    // Check for >>>, >=, or >>
+                    if (pos + 2 < len && input[pos + 1] == '>' && input[pos + 2] == '>') {
+                        tok->type = TOK_BIT_RSHIFT;
+                        tok->len = 3;
+                        pos += 3;
+                    } else if (pos + 1 < len && input[pos + 1] == '=') {
                         tok->type = TOK_GE;
                         tok->len = 2;
                         pos += 2;
@@ -694,6 +767,36 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                         pos += 2;
                     } else {
                         tok->type = TOK_BANG;
+                        tok->len = 1;
+                        pos++;
+                    }
+                    break;
+                case '&':
+                    // Check for &&. (bitwise) or && (logical)
+                    if (pos + 2 < len && input[pos + 1] == '&' && input[pos + 2] == '.') {
+                        tok->type = TOK_BIT_AND;
+                        tok->len = 3;
+                        pos += 3;
+                    } else if (pos + 1 < len && input[pos + 1] == '&') {
+                        tok->type = TOK_AND;
+                        tok->len = 2;
+                        pos += 2;
+                    } else {
+                        // Single & is an error in Blaze
+                        tok->type = TOK_ERROR;
+                        tok->len = 1;
+                        pos++;
+                    }
+                    break;
+                case '~': 
+                    // Check for ~~
+                    if (pos + 1 < len && input[pos + 1] == '~') {
+                        tok->type = TOK_BIT_NOT;
+                        tok->len = 2;
+                        pos += 2;
+                    } else {
+                        // Single ~ is an error in Blaze
+                        tok->type = TOK_ERROR;
                         tok->len = 1;
                         pos++;
                     }

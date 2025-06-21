@@ -228,6 +228,24 @@ typedef enum {
     TOK_FUTURE_ZONE,
     TOK_UNKNOWN_ZONE,
     
+    // Logical operators
+    TOK_AND,             // &&
+    TOK_OR,              // ||
+    
+    // Bitwise operators (conflict-free)
+    TOK_BIT_AND,         // &&.
+    TOK_BIT_OR,          // ||.
+    TOK_BIT_XOR,         // ^^
+    TOK_BIT_NOT,         // ~~
+    TOK_BIT_LSHIFT,      // <<<
+    TOK_BIT_RSHIFT,      // >>>
+    
+    // Arithmetic operators
+    TOK_EXPONENT,        // **
+    
+    // Math function prefix
+    TOK_MATH_PREFIX,     // math.
+    
     // Control
     TOK_EOF,
     TOK_ERROR
@@ -304,7 +322,8 @@ typedef enum {
     NODE_OUTPUT,
     NODE_STRING,
     NODE_INLINE_ASM,
-    NODE_FUNC_CALL
+    NODE_FUNC_CALL,
+    NODE_UNARY_OP
 } NodeType;
 
 // AST Node - compact representation
@@ -377,6 +396,12 @@ typedef struct ASTNode {
             uint32_t code_offset;       // Offset in string pool for asm code
             uint16_t code_len;          // Length of assembly code
         } inline_asm;
+        
+        // Unary operation
+        struct {
+            TokenType op;               // Unary operator (!, ~, etc.)
+            uint16_t expr_idx;          // Expression to apply operator to
+        } unary;
     } data;
 } ASTNode;
 

@@ -415,7 +415,11 @@ static uint16_t parse_expression_prec(Parser* p, int min_prec);
 // Get operator precedence
 static int get_precedence(TokenType type) {
     switch (type) {
-        // Multiplication and division have highest precedence
+        // Exponentiation has highest precedence
+        case TOK_EXPONENT:
+            return 7;
+            
+        // Multiplication and division
         case TOK_STAR:
         case TOK_DIV:
         case TOK_PERCENT:
@@ -445,9 +449,17 @@ static int get_precedence(TokenType type) {
         case TOK_NOT_EQUAL:     // *!=
             return 3;
             
+        // Logical AND
+        case TOK_AND:
+            return 2;
+            
+        // Logical OR
+        case TOK_OR:
+            return 1;
+            
         // Pipe operator (lower precedence for data flow)
         case TOK_PIPE:
-            return 2;
+            return 0;
             
         // Temporal operators (lowest precedence)
         case TOK_LT:
@@ -464,8 +476,10 @@ static int get_precedence(TokenType type) {
 
 // Check if operator is right associative
 static bool is_right_assoc(TokenType type) {
+    // Exponentiation is right associative (like in most languages)
+    if (type == TOK_EXPONENT) return true;
+    
     // Most operators are left associative
-    // Temporal operators could be right associative if needed
     return false;
 }
 
@@ -499,6 +513,16 @@ static uint16_t parse_expression_prec(Parser* p, int min_prec) {
         p->nodes[neg_node].data.binary.left_idx = zero_node;
         p->nodes[neg_node].data.binary.right_idx = expr;
         left = neg_node;
+    } else if (check(p, TOK_BANG)) {
+        advance(p);
+        // Parse logical NOT
+        uint16_t expr = parse_expression_prec(p, 10); // High precedence for unary
+        uint16_t not_node = alloc_node(p, NODE_UNARY_OP);
+        if (not_node == 0) return 0;
+        
+        p->nodes[not_node].data.unary.op = TOK_BANG;
+        p->nodes[not_node].data.unary.expr_idx = expr;
+        left = not_node;
     } else if (check(p, TOK_LT) || check(p, TOK_GT) || 
                check(p, TOK_TIMING_ONTO) || check(p, TOK_TIMING_INTO) || 
                check(p, TOK_TIMING_BOTH)) {
@@ -542,6 +566,8 @@ static uint16_t parse_expression_prec(Parser* p, int min_prec) {
             op_type = TOK_DIV;
         } else if (check(p, TOK_PERCENT)) {
             op_type = TOK_PERCENT;
+        } else if (check(p, TOK_EXPONENT)) {
+            op_type = TOK_EXPONENT;
         } else if (check(p, TOK_LT_CMP)) {
             op_type = TOK_LT_CMP;
         } else if (check(p, TOK_GT_CMP)) {
@@ -556,12 +582,24 @@ static uint16_t parse_expression_prec(Parser* p, int min_prec) {
             op_type = TOK_NE;
         } else if (check(p, TOK_PIPE)) {
             op_type = TOK_PIPE;
+        } else if (check(p, TOK_AND)) {
+            op_type = TOK_AND;
+        } else if (check(p, TOK_OR)) {
+            op_type = TOK_OR;
+        } else if (check(p, TOK_BANG)) {
+            // Handle logical NOT as unary operator
+            // This should be handled in parse_primary, not here
+            break;
         } else {
             // No more operators
             break;
         }
         
         if (op_type == TOK_EOF) break;
+        
+        print_str("[EXPR] Found operator type=");
+        print_num(op_type);
+        print_str("\n");
         
         int prec = get_precedence(op_type);
         if (prec < min_prec) break;

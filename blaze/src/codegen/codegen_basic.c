@@ -448,6 +448,35 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                     emit_mov_reg_reg(buf, RAX, RDX); // Move remainder to RAX
                     break;
                     
+                case TOK_EXPONENT:
+                    // Exponentiation: base in RAX, exponent in RDX
+                    // Simple iterative implementation for integer powers
+                    // TODO: For production, use a more efficient algorithm
+                    emit_mov_reg_reg(buf, RCX, RAX); // Save base in RCX
+                    emit_mov_reg_imm64(buf, RAX, 1); // Result = 1
+                    
+                    // Loop: while RDX > 0
+                    uint32_t loop_start = buf->position;
+                    emit_test_reg_reg(buf, RDX, RDX);
+                    
+                    // Calculate jump distance after the loop body
+                    // We need to jump over: MUL RCX (3 bytes) + DEC RDX (3 bytes) + JMP (2 bytes) = 8 bytes
+                    emit_jz(buf, 8); // Jump to end if exponent is 0
+                    
+                    // Result *= base
+                    emit_mul_reg(buf, RCX);
+                    
+                    // Exponent--
+                    emit_dec_reg(buf, RDX);
+                    
+                    // Jump back to loop start
+                    int32_t jump_distance = loop_start - (buf->position + 2); // +2 for JMP instruction
+                    emit_byte(buf, 0xEB); // JMP rel8
+                    emit_byte(buf, (uint8_t)jump_distance);
+                    
+                    // Loop end - result is in RAX
+                    break;
+                    
                 // Comparison operators - set flags and use SETcc
                 case TOK_LT_CMP:
                     emit_cmp_reg_reg(buf, RAX, RDX);
@@ -515,11 +544,88 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                     emit_byte(buf, 0xC0);
                     break;
                     
+                case TOK_AND:
+                    // Logical AND: both operands must be non-zero
+                    // Test left operand
+                    emit_test_reg_reg(buf, RAX, RAX);
+                    emit_byte(buf, 0x0F); // SETNZ AL
+                    emit_byte(buf, 0x95);
+                    emit_byte(buf, 0xC0);
+                    emit_byte(buf, 0x0F); // MOVZX RAX, AL
+                    emit_byte(buf, 0xB6);
+                    emit_byte(buf, 0xC0);
+                    
+                    // Test right operand
+                    emit_test_reg_reg(buf, RDX, RDX);
+                    emit_byte(buf, 0x0F); // SETNZ DL
+                    emit_byte(buf, 0x95);
+                    emit_byte(buf, 0xC2);
+                    emit_byte(buf, 0x0F); // MOVZX RDX, DL
+                    emit_byte(buf, 0xB6);
+                    emit_byte(buf, 0xD2);
+                    
+                    // AND the results
+                    emit_byte(buf, 0x48); // AND RAX, RDX
+                    emit_byte(buf, 0x21);
+                    emit_byte(buf, 0xD0);
+                    break;
+                    
+                case TOK_OR:
+                    // Logical OR: at least one operand must be non-zero
+                    // Combine operands
+                    emit_byte(buf, 0x48); // OR RAX, RDX
+                    emit_byte(buf, 0x09);
+                    emit_byte(buf, 0xD0);
+                    
+                    // Test result and set 0 or 1
+                    emit_test_reg_reg(buf, RAX, RAX);
+                    emit_byte(buf, 0x0F); // SETNZ AL
+                    emit_byte(buf, 0x95);
+                    emit_byte(buf, 0xC0);
+                    emit_byte(buf, 0x0F); // MOVZX RAX, AL
+                    emit_byte(buf, 0xB6);
+                    emit_byte(buf, 0xC0);
+                    break;
+                    
                 default:
                     // Unsupported operation
                     emit_mov_reg_imm64(buf, RAX, 0);
                     break;
                 }
+            }
+            break;
+        }
+        
+        case NODE_UNARY_OP: {
+            uint16_t operand_idx = expr->data.unary.expr_idx;
+            TokenType op = expr->data.unary.op;
+            
+            // Generate the expression
+            generate_expression(buf, nodes, operand_idx, symbols, string_pool);
+            
+            // Apply unary operator
+            switch (op) {
+                case TOK_BANG:
+                    // Logical NOT: test if zero
+                    emit_test_reg_reg(buf, RAX, RAX);
+                    emit_byte(buf, 0x0F); // SETZ AL
+                    emit_byte(buf, 0x94);
+                    emit_byte(buf, 0xC0);
+                    emit_byte(buf, 0x0F); // MOVZX RAX, AL
+                    emit_byte(buf, 0xB6);
+                    emit_byte(buf, 0xC0);
+                    break;
+                    
+                case TOK_BIT_NOT:
+                    // Bitwise NOT: invert all bits
+                    emit_byte(buf, 0x48); // NOT RAX
+                    emit_byte(buf, 0xF7);
+                    emit_byte(buf, 0xD0);
+                    break;
+                    
+                default:
+                    // Unsupported unary operator
+                    break;
             }
             break;
         }

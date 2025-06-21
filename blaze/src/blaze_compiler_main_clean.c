@@ -240,6 +240,7 @@ int main(int argc, char** argv) {
         .code = code_buffer,
         .position = 0,
         .capacity = MAX_CODE_SIZE,
+        .has_error = false,
         .temporal_count = 0
     };
     
@@ -249,8 +250,20 @@ int main(int argc, char** argv) {
     // Generate code
     generate_statement(&code_buf, nodes, root_idx, &symbols, string_pool);
     
+    // Check for buffer overflow errors
+    if (code_buf.has_error) {
+        print_str("[ERROR] Code generation failed - buffer overflow!\n");
+        return 1;
+    }
+    
     // Exit cleanly
     emit_platform_exit(&code_buf, PLATFORM_LINUX, 0);
+    
+    // Final error check
+    if (code_buf.has_error) {
+        print_str("[ERROR] Late buffer overflow detected!\n");
+        return 1;
+    }
     
     // Write executable
     generate_elf_executable(code_buffer, code_buf.position, argv[2]);
