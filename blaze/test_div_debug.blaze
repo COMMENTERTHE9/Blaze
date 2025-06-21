@@ -1,0 +1,15 @@
+var.v-a-[210]
+var.v-b-[5]
+var.v-c-[a / b]
+print/ a
+print/ b
+print/ c
+
+var.v-d-[210 / 5]
+print/ d
+
+var.v-e-[42 - 10]
+print/ e
+
+var.v-f-[210 / 5 - 10]
+print/ f

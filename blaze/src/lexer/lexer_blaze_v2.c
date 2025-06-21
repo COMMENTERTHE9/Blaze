@@ -1,0 +1,984 @@
+// BLAZE LEXER V2 - Properly handles Blaze syntax patterns
+// Correctly parses var.v-name-[value] and other Blaze constructs
+
+#include "blaze_internals.h"
+
+// Character classification for Blaze
+static inline bool is_whitespace(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+static inline bool is_alpha(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+static inline bool is_digit(char c) {
+    return c >= '0' && c <= '9';
+}
+
+static inline bool is_alnum(char c) {
+    return is_alpha(c) || is_digit(c);
+}
+
+// Check if character can be part of identifier
+static inline bool is_ident_char(char c) {
+    return is_alnum(c) || c == '_' || c == '-' || c == '.';
+}
+
+// Skip whitespace and update line number
+static uint32_t skip_whitespace(const char* input, uint32_t pos, uint32_t len, uint32_t* line) {
+    while (pos < len && is_whitespace(input[pos])) {
+        if (input[pos] == '\n') (*line)++;
+        pos++;
+    }
+    return pos;
+}
+
+// Skip comment
+static uint32_t skip_comment(const char* input, uint32_t pos, uint32_t len) {
+    if (pos + 1 < len && input[pos] == '#' && input[pos + 1] == '#') {
+        pos += 2;
+        // Skip until end of line or next ##
+        while (pos < len && input[pos] != '\n') {
+            if (pos + 1 < len && input[pos] == '#' && input[pos + 1] == '#') {
+                pos += 2;
+                break;
+            }
+            pos++;
+        }
+    }
+    return pos;
+}
+
+// Match a string pattern
+static bool match_string(const char* input, uint32_t pos, uint32_t len, const char* pattern) {
+    uint32_t plen = 0;
+    while (pattern[plen]) plen++;
+    
+    if (pos + plen > len) return false;
+    
+    for (uint32_t i = 0; i < plen; i++) {
+        if (input[pos + i] != pattern[i]) return false;
+    }
+    return true;
+}
+
+// Parse variable declaration: var.v-name-[value] or constant: var.c-name-[value]
+static uint32_t parse_var_decl(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    bool is_const = false;
+    
+    if (match_string(input, pos, len, "var.v-")) {
+        is_const = false;
+    } else if (match_string(input, pos, len, "var.c-")) {
+        is_const = true;
+    } else {
+        return 0;
+    }
+    
+    uint32_t start = pos;
+    pos += 6; // Skip "var.v-" or "var.c-"
+    
+    // Now we need to find the variable name
+    uint32_t name_start = pos;
+    
+    // Variable name can contain letters, digits, underscores
+    while (pos < len && (is_alnum(input[pos]) || input[pos] == '_')) {
+        pos++;
+    }
+    
+    // Check if there's an initialization
+    if (pos < len && input[pos] == '-' && pos + 1 < len && input[pos + 1] == '[') {
+        // This is var.v-name-[value] or var.c-name-[value] pattern
+        pos++; // Skip '-'
+        tok->type = is_const ? TOK_CONST : TOK_VAR;
+        tok->len = pos - start;
+        return pos;
+    } else if (pos > name_start) {
+        // Just var.v-name or var.c-name
+        tok->type = is_const ? TOK_CONST : TOK_VAR;
+        tok->len = pos - start;
+        return pos;
+    }
+    
+    return 0;
+}
+
+// Parse identifier
+static uint32_t parse_identifier(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (!is_alpha(input[pos]) && input[pos] != '_') return 0;
+    
+    uint32_t start = pos;
+    while (pos < len && (is_alnum(input[pos]) || input[pos] == '_')) {
+        pos++;
+    }
+    
+    tok->type = TOK_IDENTIFIER;
+    tok->len = pos - start;
+    
+    // Check for keywords
+    uint32_t word_len = pos - start;
+    if (word_len == 7 && match_string(input, start, len, "declare")) {
+        tok->type = TOK_DECLARE;
+    } else if (word_len == 3 && match_string(input, start, len, "bnc")) {
+        tok->type = TOK_BNC;
+    } else if (word_len == 4 && match_string(input, start, len, "recv")) {
+        tok->type = TOK_RECV;
+    }
+    
+    return pos;
+}
+
+// Parse number
+static uint32_t parse_number(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (!is_digit(input[pos])) return 0;
+    
+    uint32_t start = pos;
+    while (pos < len && is_digit(input[pos])) {
+        pos++;
+    }
+    
+    // Check for decimal
+    if (pos + 1 < len && input[pos] == '.' && is_digit(input[pos + 1])) {
+        pos++; // Skip '.'
+        while (pos < len && is_digit(input[pos])) {
+            pos++;
+        }
+    }
+    
+    tok->type = TOK_NUMBER;
+    tok->len = pos - start;
+    return pos;
+}
+
+// Parse function definition: |name|
+static uint32_t parse_function_def(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (input[pos] != '|') return 0;
+    
+    uint32_t start = pos;
+    pos++; // Skip first |
+    
+    // Find closing |
+    while (pos < len && input[pos] != '|') {
+        pos++;
+    }
+    
+    if (pos < len && input[pos] == '|') {
+        pos++; // Include closing |
+        tok->type = TOK_PIPE; // For now, treat as pipe pairs
+        tok->len = pos - start;
+        return pos;
+    }
+    
+    return 0;
+}
+
+
+// Parse parameter: /{@param:name}
+static uint32_t parse_parameter(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (pos + 9 < len && match_string(input, pos, len, "/{@param:")) {
+        uint32_t start = pos;
+        pos += 9; // Skip "/{@param:"
+        
+        // Find the closing }
+        while (pos < len && input[pos] != '}') {
+            if (!is_alnum(input[pos]) && input[pos] != '_') {
+                return 0; // Invalid character in parameter name
+            }
+            pos++;
+        }
+        
+        if (pos < len && input[pos] == '}') {
+            pos++; // Include the closing }
+            tok->type = TOK_PARAM;
+            tok->len = pos - start;
+            return pos;
+        }
+    }
+    return 0;
+}
+
+// Parse timeline: timeline-[ or ^timeline.[
+static uint32_t parse_timeline(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (match_string(input, pos, len, "timeline-[")) {
+        tok->type = TOK_TIMELINE_DEF;
+        tok->len = 10;
+        return pos + 10;
+    }
+    
+    if (input[pos] == '^' && match_string(input, pos + 1, len - 1, "timeline.[")) {
+        tok->type = TOK_TIMELINE_JUMP;
+        tok->len = 11;
+        return pos + 11;
+    }
+    
+    return 0;
+}
+
+// Parse fixed points: fix.p-[ or f.p-[ or f.p (inline)
+static uint32_t parse_fixed_point(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (match_string(input, pos, len, "fix.p-[")) {
+        tok->type = TOK_FIX_P;
+        tok->len = 7;
+        return pos + 7;
+    }
+    
+    if (match_string(input, pos, len, "f.p-[")) {
+        tok->type = TOK_F_P;
+        tok->len = 5;
+        return pos + 5;
+    }
+    
+    // Also check for inline f.p without bracket
+    if (match_string(input, pos, len, "f.p") && 
+        (pos + 3 >= len || (!is_alnum(input[pos + 3]) && input[pos + 3] != '-'))) {
+        tok->type = TOK_F_P;
+        tok->len = 3;
+        return pos + 3;
+    }
+    
+    return 0;
+}
+
+// Parse permanent timelines: timelineper-[ or timelinep-[ or ^timelinep.[
+static uint32_t parse_permanent_timeline(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (match_string(input, pos, len, "timelineper-[")) {
+        tok->type = TOK_TIMELINE_PER;
+        tok->len = 13;
+        return pos + 13;
+    }
+    
+    if (match_string(input, pos, len, "timelinep-[")) {
+        tok->type = TOK_TIMELINE_P;
+        tok->len = 11;
+        return pos + 11;
+    }
+    
+    if (input[pos] == '^' && match_string(input, pos + 1, len - 1, "timelinep.[")) {
+        tok->type = TOK_TIMELINE_P_JUMP;
+        tok->len = 12;
+        return pos + 12;
+    }
+    
+    return 0;
+}
+
+// Parse action block: do/
+static uint32_t parse_action(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (match_string(input, pos, len, "do/")) {
+        tok->type = TOK_ACTION_START;
+        tok->len = 3;
+        return pos + 3;
+    }
+    return 0;
+}
+
+// Parse block end marker: :>
+static uint32_t parse_block_end(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (pos + 1 < len && input[pos] == ':' && input[pos + 1] == '>') {
+        tok->type = TOK_BLOCK_END;
+        tok->len = 2;
+        return pos + 2;
+    }
+    return 0;
+}
+
+// Parse time-bridge operators: >/>, >\>, </<, <\<
+static uint32_t parse_time_bridge(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (pos + 2 < len) {
+        if (input[pos] == '>' && input[pos + 1] == '/' && input[pos + 2] == '>') {
+            tok->type = TOK_TIME_BRIDGE_FWD;
+            tok->len = 3;
+            return pos + 3;
+        }
+        if (input[pos] == '>' && input[pos + 1] == '\\' && input[pos + 2] == '>') {
+            tok->type = TOK_SLOW_FWD;
+            tok->len = 3;
+            return pos + 3;
+        }
+        if (input[pos] == '<' && input[pos + 1] == '/' && input[pos + 2] == '<') {
+            tok->type = TOK_FAST_REWIND;
+            tok->len = 3;
+            return pos + 3;
+        }
+        if (input[pos] == '<' && input[pos + 1] == '\\' && input[pos + 2] == '<') {
+            tok->type = TOK_SLOW_REWIND;
+            tok->len = 3;
+            return pos + 3;
+        }
+    }
+    return 0;
+}
+
+// Parse array: array.4d
+static uint32_t parse_array(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (match_string(input, pos, len, "array.4d")) {
+        tok->type = TOK_ARRAY_4D;
+        tok->len = 8;
+        return pos + 8;
+    }
+    return 0;
+}
+
+// Parse GAP: gap.compute
+static uint32_t parse_gap(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (match_string(input, pos, len, "gap.compute")) {
+        tok->type = TOK_GAP_COMPUTE;
+        tok->len = 11;
+        return pos + 11;
+    }
+    return 0;
+}
+
+// Parse connectors: \>| or \<|
+static uint32_t parse_connector(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (pos + 2 < len && input[pos] == '\\') {
+        if (input[pos + 1] == '>' && input[pos + 2] == '|') {
+            tok->type = TOK_CONNECTOR_FWD;
+            tok->len = 3;
+            return pos + 3;
+        }
+        if (input[pos + 1] == '<' && input[pos + 2] == '|') {
+            tok->type = TOK_CONNECTOR_BWD;
+            tok->len = 3;
+            return pos + 3;
+        }
+    }
+    return 0;
+}
+
+// Parse temporal operators
+static uint32_t parse_temporal_op(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (input[pos] == '<') {
+        if (pos + 1 < len && input[pos + 1] == '<') {
+            tok->type = TOK_TIMING_ONTO;
+            tok->len = 2;
+            return pos + 2;
+        } else if (pos + 1 < len && input[pos + 1] == '>') {
+            tok->type = TOK_TIMING_BOTH;
+            tok->len = 2;
+            return pos + 2;
+        } else {
+            tok->type = TOK_LT;
+            tok->len = 1;
+            return pos + 1;
+        }
+    }
+    
+    if (input[pos] == '>') {
+        if (pos + 1 < len && input[pos + 1] == '>') {
+            tok->type = TOK_TIMING_INTO;
+            tok->len = 2;
+            return pos + 2;
+        } else {
+            tok->type = TOK_GT;
+            tok->len = 1;
+            return pos + 1;
+        }
+    }
+    
+    return 0;
+}
+
+// Parse output methods: print/, txt/, out/, fmt/, dyn/
+static uint32_t parse_output_method(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (match_string(input, pos, len, "print/")) {
+        tok->type = TOK_PRINT;
+        tok->len = 6;
+        return pos + 6;
+    }
+    
+    if (match_string(input, pos, len, "txt/")) {
+        tok->type = TOK_TXT;
+        tok->len = 4;
+        return pos + 4;
+    }
+    
+    if (match_string(input, pos, len, "out/")) {
+        tok->type = TOK_OUT;
+        tok->len = 4;
+        return pos + 4;
+    }
+    
+    if (match_string(input, pos, len, "fmt/")) {
+        tok->type = TOK_FMT;
+        tok->len = 4;
+        return pos + 4;
+    }
+    
+    if (match_string(input, pos, len, "dyn/")) {
+        tok->type = TOK_DYN;
+        tok->len = 4;
+        return pos + 4;
+    }
+    
+    if (match_string(input, pos, len, "asm/")) {
+        tok->type = TOK_ASM;
+        tok->len = 4;
+        return pos + 4;
+    }
+    
+    return 0;
+}
+
+// Parse c.split._, cac._, or Crack._ 
+static uint32_t parse_split(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    // Check for c.split._
+    if (match_string(input, pos, len, "c.split._")) {
+        tok->type = TOK_C_SPLIT;
+        tok->start = pos;
+        
+        // Find the bracketed content
+        uint32_t end = pos + 9; // Length of "c.split._"
+        if (end < len && input[end] == '[') {
+            end++;
+            int bracket_depth = 1;
+            while (end < len && bracket_depth > 0) {
+                if (input[end] == '[') bracket_depth++;
+                else if (input[end] == ']') bracket_depth--;
+                end++;
+            }
+        }
+        
+        tok->len = end - pos;
+        return end;
+    }
+    
+    // Check for cac._
+    if (match_string(input, pos, len, "cac._")) {
+        tok->type = TOK_C_SPLIT;
+        tok->start = pos;
+        
+        uint32_t end = pos + 5; // Length of "cac._"
+        if (end < len && input[end] == '[') {
+            end++;
+            int bracket_depth = 1;
+            while (end < len && bracket_depth > 0) {
+                if (input[end] == '[') bracket_depth++;
+                else if (input[end] == ']') bracket_depth--;
+                end++;
+            }
+        }
+        
+        tok->len = end - pos;
+        return end;
+    }
+    
+    // Check for Crack._
+    if (match_string(input, pos, len, "Crack._")) {
+        tok->type = TOK_C_SPLIT;
+        tok->start = pos;
+        
+        uint32_t end = pos + 7; // Length of "Crack._"
+        if (end < len && input[end] == '[') {
+            end++;
+            int bracket_depth = 1;
+            while (end < len && bracket_depth > 0) {
+                if (input[end] == '[') bracket_depth++;
+                else if (input[end] == ']') bracket_depth--;
+                end++;
+            }
+        }
+        
+        tok->len = end - pos;
+        return end;
+    }
+    
+    return 0;
+}
+
+// Parse matrix: [:::name1-name2-name3[values]]
+static uint32_t parse_matrix(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    // Check for [:::
+    if (pos + 4 < len && input[pos] == '[' && 
+        input[pos + 1] == ':' && input[pos + 2] == ':' && input[pos + 3] == ':') {
+        
+        tok->type = TOK_MATRIX_START;
+        tok->start = pos;
+        
+        // Find the end of the matrix definition
+        uint32_t end = pos + 4;
+        int bracket_depth = 1;
+        
+        while (end < len && bracket_depth > 0) {
+            if (input[end] == '[') {
+                bracket_depth++;
+            } else if (input[end] == ']') {
+                bracket_depth--;
+            }
+            end++;
+        }
+        
+        if (bracket_depth == 0) {
+            tok->len = end - pos;
+            return end;
+        }
+    }
+    
+    return 0;
+}
+
+// Parse comparison operators: *>, *_<, *=, *!=
+static uint32_t parse_comparison(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (input[pos] == '*') {
+        if (pos + 1 < len && input[pos + 1] == '>') {
+            tok->type = TOK_GREATER_THAN;
+            tok->len = 2;
+            return pos + 2;
+        }
+        if (pos + 1 < len && input[pos + 1] == '=') {
+            tok->type = TOK_EQUAL;
+            tok->len = 2;
+            return pos + 2;
+        }
+        if (pos + 2 < len && input[pos + 1] == '_' && input[pos + 2] == '<') {
+            tok->type = TOK_LESS_EQUAL;
+            tok->len = 3;
+            return pos + 3;
+        }
+        if (pos + 2 < len && input[pos + 1] == '!' && input[pos + 2] == '=') {
+            tok->type = TOK_NOT_EQUAL;
+            tok->len = 3;
+            return pos + 3;
+        }
+    }
+    return 0;
+}
+
+// Parse conditional: f.xxx or fucn.xxx
+static uint32_t parse_conditional(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    bool is_short = false;
+    uint32_t prefix_len = 0;
+    
+    if (match_string(input, pos, len, "f.")) {
+        is_short = true;
+        prefix_len = 2;
+    } else if (match_string(input, pos, len, "fucn.")) {
+        is_short = false;
+        prefix_len = 5;
+    } else {
+        return 0;
+    }
+    
+    // Check what follows
+    uint32_t abbr_start = pos + prefix_len;
+    
+    // Match abbreviations
+    struct {
+        const char* abbr;
+        TokenType type;
+        uint32_t len;
+    } conditionals[] = {
+        {"ens", TOK_COND_ENS, 3},
+        {"ver", TOK_COND_VER, 3},
+        {"chk", TOK_COND_CHK, 3},
+        {"try", TOK_COND_TRY, 3},
+        {"grd", TOK_COND_GRD, 3},
+        {"unl", TOK_COND_UNL, 3},
+        {"whl", TOK_COND_WHL, 3},
+        {"unt", TOK_COND_UNT, 3},
+        {"obs", TOK_COND_OBS, 3},
+        {"det", TOK_COND_DET, 3},
+        {"rec", TOK_COND_REC, 3},
+        {"rte", TOK_COND_RTE, 3},
+        {"mon", TOK_COND_MON, 3},
+        {"dec", TOK_COND_DEC, 3},
+        {"ass", TOK_COND_ASS, 3},
+        {"msr", TOK_COND_MSR, 3},
+        {"eval", TOK_COND_EVAL, 4},
+        {"if", TOK_COND_IF, 2},
+        {"fs", TOK_COND_FS, 2},
+    };
+    
+    for (int i = 0; i < sizeof(conditionals) / sizeof(conditionals[0]); i++) {
+        if (match_string(input, abbr_start, len, conditionals[i].abbr)) {
+            tok->type = conditionals[i].type;
+            tok->len = prefix_len + conditionals[i].len;
+            return pos + tok->len;
+        }
+    }
+    
+    return 0;
+}
+
+// Parse function call: verb.can/{@param:value}/ or verb.can/
+static uint32_t parse_function_call(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    // Function calls in Blaze follow the pattern: identifier.identifier/.../ 
+    uint32_t start = pos;
+    
+    // Need an identifier
+    if (!is_alpha(input[pos])) return 0;
+    
+    // Parse first part (verb)
+    while (pos < len && (is_alnum(input[pos]) || input[pos] == '_')) {
+        pos++;
+    }
+    
+    // Must have a dot
+    if (pos >= len || input[pos] != '.') return 0;
+    pos++; // Skip dot
+    
+    // Parse second part (can/method)
+    if (pos >= len || !is_alpha(input[pos])) return 0;
+    
+    while (pos < len && (is_alnum(input[pos]) || input[pos] == '_')) {
+        pos++;
+    }
+    
+    // Must have a slash
+    if (pos >= len || input[pos] != '/') return 0;
+    
+    // This is a function call pattern
+    tok->type = TOK_FUNC_CALL;
+    tok->len = pos - start;
+    return pos;
+}
+
+// Main lexer function
+uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
+    uint32_t pos = 0;
+    uint32_t token_count = 0;
+    uint32_t line = 1;
+    
+    while (pos < len && token_count < MAX_TOKENS - 1) {
+        // Skip whitespace
+        pos = skip_whitespace(input, pos, len, &line);
+        if (pos >= len) break;
+        
+        // Skip comments
+        uint32_t new_pos = skip_comment(input, pos, len);
+        if (new_pos != pos) {
+            pos = new_pos;
+            continue;
+        }
+        
+        Token* tok = &output[token_count];
+        tok->start = pos;
+        tok->line = line;
+        
+        // Try to parse various token types
+        uint32_t next_pos = 0;
+        
+        // Try variable declaration first
+        if ((next_pos = parse_var_decl(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try array.4d
+        if ((next_pos = parse_array(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try gap.compute
+        if ((next_pos = parse_gap(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try timeline
+        if ((next_pos = parse_timeline(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try fixed points
+        if ((next_pos = parse_fixed_point(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try permanent timelines
+        if ((next_pos = parse_permanent_timeline(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try parameter BEFORE action to catch /{@param: before / is lexed
+        if ((next_pos = parse_parameter(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try action block
+        if ((next_pos = parse_action(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try block end marker :>
+        if ((next_pos = parse_block_end(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try time-bridge operators
+        if ((next_pos = parse_time_bridge(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try @param:name reference
+        if (pos + 7 < len && input[pos] == '@' && match_string(input, pos + 1, len - 1, "param:")) {
+            uint32_t start = pos;
+            pos += 7; // Skip "@param:"
+            
+            // Parse parameter name
+            while (pos < len && (is_alnum(input[pos]) || input[pos] == '_')) {
+                pos++;
+            }
+            
+            if (pos > start + 7) { // We found a parameter name
+                tok->type = TOK_PARAM;
+                tok->len = pos - start;
+                pos = start + tok->len;
+                token_count++;
+                continue;
+            }
+            pos = start; // Reset if no valid name
+        }
+        
+        // Try output methods (print/, txt/, out/, fmt/, dyn/)
+        if ((next_pos = parse_output_method(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try split operations (c.split._, cac._, Crack._)
+        if ((next_pos = parse_split(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try matrix
+        if ((next_pos = parse_matrix(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try connector
+        if ((next_pos = parse_connector(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try temporal operators
+        if ((next_pos = parse_temporal_op(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try comparison operators
+        if ((next_pos = parse_comparison(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try conditionals
+        if ((next_pos = parse_conditional(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try function call (verb.can/)
+        if ((next_pos = parse_function_call(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try number
+        if ((next_pos = parse_number(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try identifier
+        if ((next_pos = parse_identifier(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try string literal
+        if (input[pos] == '"') {
+            uint32_t start = pos;
+            pos++; // Skip opening quote
+            
+            // Find closing quote
+            while (pos < len && input[pos] != '"') {
+                if (input[pos] == '\\' && pos + 1 < len) {
+                    pos += 2; // Skip escaped character
+                } else {
+                    pos++;
+                }
+            }
+            
+            if (pos < len && input[pos] == '"') {
+                pos++; // Include closing quote
+                tok->type = TOK_STRING;
+                tok->len = pos - start;
+                token_count++;
+                continue;
+            }
+        }
+        
+        // Single character tokens
+        char ch = input[pos];
+        switch (ch) {
+            case '|': tok->type = TOK_PIPE; break;
+            case '/': tok->type = TOK_SLASH; break;
+            case '\\': tok->type = TOK_BACKSLASH; break;
+            case '^': tok->type = TOK_JUMP_MARKER; break;
+            case '!': tok->type = TOK_BANG; break;
+            case ':': tok->type = TOK_COLON; break;
+            case '*': tok->type = TOK_STAR; break;
+            case '-': tok->type = TOK_MINUS; break;
+            case '[': tok->type = TOK_BRACKET_OPEN; break;
+            case ']': tok->type = TOK_BRACKET_CLOSE; break;
+            case '.': tok->type = TOK_DOT; break;
+            case '_': tok->type = TOK_UNDERSCORE; break;
+            case '@': tok->type = TOK_AT; break;
+            case ';': tok->type = TOK_SEMICOLON; break;
+            case ',': tok->type = TOK_COMMA; break;
+            case '%': tok->type = TOK_PERCENT; break;
+            case '=': tok->type = TOK_EQUALS; break;
+            case '(': tok->type = TOK_LPAREN; break;
+            case ')': tok->type = TOK_RPAREN; break;
+            case '{': tok->type = TOK_LBRACE; break;
+            case '}': tok->type = TOK_RBRACE; break;
+            default:
+                tok->type = TOK_ERROR;
+                break;
+        }
+        
+        tok->len = 1;
+        pos++;
+        token_count++;
+    }
+    
+    // Add EOF token
+    if (token_count < MAX_TOKENS) {
+        output[token_count].type = TOK_EOF;
+        output[token_count].start = pos;
+        output[token_count].len = 0;
+        output[token_count].line = line;
+        token_count++;
+    }
+    
+    return token_count;
+}
+
+// Debug function to print tokens
+void debug_print_tokens(Token* tokens, uint32_t count, const char* source) {
+    print_str("\n=== TOKENS ===\n");
+    
+    for (uint32_t i = 0; i < count && tokens[i].type != TOK_EOF; i++) {
+        Token* t = &tokens[i];
+        
+        print_str("Line ");
+        print_num(t->line);
+        print_str(": ");
+        
+        // Print token type
+        switch (t->type) {
+            case TOK_VAR: print_str("VAR"); break;
+            case TOK_CONST: print_str("CONST"); break;
+            case TOK_ARRAY_4D: print_str("ARRAY_4D"); break;
+            case TOK_GAP_COMPUTE: print_str("GAP_COMPUTE"); break;
+            case TOK_PARAM: print_str("PARAM"); break;
+            case TOK_MATRIX_START: print_str("MATRIX"); break;
+            case TOK_TIMELINE_DEF: print_str("TIMELINE_DEF"); break;
+            case TOK_TIMELINE_JUMP: print_str("TIMELINE_JUMP"); break;
+            case TOK_ACTION_START: print_str("ACTION_START"); break;
+            case TOK_ACTION_END: print_str("ACTION_END"); break;
+            case TOK_CONNECTOR_FWD: print_str("CONN_FWD"); break;
+            case TOK_CONNECTOR_BWD: print_str("CONN_BWD"); break;
+            case TOK_TIMING_ONTO: print_str("ONTO"); break;
+            case TOK_TIMING_INTO: print_str("INTO"); break;
+            case TOK_TIMING_BOTH: print_str("BOTH"); break;
+            case TOK_LT: print_str("LT"); break;
+            case TOK_GT: print_str("GT"); break;
+            case TOK_BLOCK_END: print_str("BLOCK_END"); break;
+            case TOK_TIME_BRIDGE_FWD: print_str("TIME_BRIDGE_FWD"); break;
+            case TOK_SLOW_FWD: print_str("SLOW_FWD"); break;
+            case TOK_FAST_REWIND: print_str("FAST_REWIND"); break;
+            case TOK_SLOW_REWIND: print_str("SLOW_REWIND"); break;
+            case TOK_GREATER_THAN: print_str("GREATER_THAN"); break;
+            case TOK_LESS_EQUAL: print_str("LESS_EQUAL"); break;
+            case TOK_EQUAL: print_str("EQUAL"); break;
+            case TOK_NOT_EQUAL: print_str("NOT_EQUAL"); break;
+            case TOK_COND_CHK: print_str("COND_CHK"); break;
+            case TOK_COND_ENS: print_str("COND_ENS"); break;
+            case TOK_COND_VER: print_str("COND_VER"); break;
+            case TOK_COND_IF: print_str("COND_IF"); break;
+            case TOK_BNC: print_str("BNC"); break;
+            case TOK_RECV: print_str("RECV"); break;
+            case TOK_FIX_P: print_str("FIX_P"); break;
+            case TOK_F_P: print_str("F_P"); break;
+            case TOK_TIMELINE_PER: print_str("TIMELINE_PER"); break;
+            case TOK_TIMELINE_P: print_str("TIMELINE_P"); break;
+            case TOK_TIMELINE_P_JUMP: print_str("TIMELINE_P_JUMP"); break;
+            case TOK_PRINT: print_str("PRINT"); break;
+            case TOK_TXT: print_str("TXT"); break;
+            case TOK_OUT: print_str("OUT"); break;
+            case TOK_FMT: print_str("FMT"); break;
+            case TOK_DYN: print_str("DYN"); break;
+            case TOK_ASM: print_str("ASM"); break;
+            case TOK_IDENTIFIER: print_str("IDENT"); break;
+            case TOK_NUMBER: print_str("NUMBER"); break;
+            case TOK_STRING: print_str("STRING"); break;
+            case TOK_PIPE: print_str("PIPE"); break;
+            case TOK_SLASH: print_str("SLASH"); break;
+            case TOK_BACKSLASH: print_str("BACKSLASH"); break;
+            case TOK_JUMP_MARKER: print_str("JUMP"); break;
+            case TOK_MINUS: print_str("MINUS"); break;
+            case TOK_BRACKET_OPEN: print_str("LBRACKET"); break;
+            case TOK_BRACKET_CLOSE: print_str("RBRACKET"); break;
+            case TOK_DOT: print_str("DOT"); break;
+            case TOK_SEMICOLON: print_str("SEMICOLON"); break;
+            case TOK_COLON: print_str("COLON"); break;
+            case TOK_LBRACE: print_str("LBRACE"); break;
+            case TOK_RBRACE: print_str("RBRACE"); break;
+            case TOK_EOF: print_str("EOF"); break;
+            default: 
+                print_str("TOK(");
+                print_num(t->type);
+                print_str(")");
+                break;
+        }
+        
+        print_str(" \"");
+        // Print actual token text
+        for (uint32_t j = 0; j < t->len && j < 30; j++) {
+            if (source[t->start + j] == '\n') {
+                print_str("\\n");
+            } else {
+                char c[2] = {source[t->start + j], '\0'};
+                print_str(c);
+            }
+        }
+        if (t->len > 30) print_str("...");
+        print_str("\"\n");
+    }
+    
+    print_str("=== END TOKENS ===\n");
+}

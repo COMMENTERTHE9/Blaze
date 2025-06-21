@@ -1,0 +1,35 @@
+## Blaze syntax demonstration
+
+## Declare functions first
+declare/
+    |greet| <>
+    |add| <>
+\
+
+## Define functions
+|greet| <
+    print/Hello\
+    print/World\
+:>
+
+|add| <
+    var.v-sum-[15]
+    print/sum\
+:>
+
+## Main program
+var.v-old_style-[100]
+var.new_style-x-[200]
+var.c-PI-[3]
+
+print/old_style\
+print/new_style\
+print/PI\
+
+^greet/
+^add/
+
+## Action block example
+do/
+    print/999\
+\

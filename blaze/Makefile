@@ -17,7 +17,7 @@ LDFLAGS = -nostdlib -static
 TARGET = blaze
 
 # Source files
-SRCS = src/blaze_compiler_main.c \
+SRCS = src/blaze_compiler_main_clean.c \
        src/lexer/lexer_core.c \
        src/parser/parser_core.c \
        src/parser/symbol_table.c \
@@ -32,6 +32,7 @@ SRCS = src/blaze_compiler_main.c \
        src/codegen/codegen_init_minimal.c \
        src/codegen/codegen_platform.c \
        src/codegen/codegen_output.c \
+       src/codegen/scalable_codegen.c \
        src/codegen/elf_generator.c \
        src/codegen/pe_generator.c \
        src/runtime/memory_manager.c \
@@ -47,7 +48,7 @@ $(TARGET): $(OBJS)
 	$(CC) $(LDFLAGS) -o $(TARGET) $(OBJS)
 #	strip -s $(TARGET)
 
-%.o: %.c include/blaze_internals.h include/blaze_types.h include/symbol_table_types.h
+%.o: %.c include/blaze_internals.h include/blaze_types.h include/symbol_table_types.h include/scalable_codegen.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Test build with standard library (for debugging)

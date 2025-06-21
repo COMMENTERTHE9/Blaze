@@ -1,0 +1,16 @@
+## Current working Blaze syntax demo
+
+|calculate| <
+    do/
+        var.v-result-[5]
+        print/result\
+    \
+:>
+
+var.v-x-[8]
+var.v-y-[2]
+
+do/
+    print/x\
+    print/y\
+\

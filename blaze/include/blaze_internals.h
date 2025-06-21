@@ -9,7 +9,7 @@
 
 // Configuration
 #define MAX_TOKENS 4096
-#define MAX_CODE_SIZE 65536
+#define MAX_CODE_SIZE 1048576  // 1MB instead of 64KB
 #define MAX_STACK_SIZE 1024
 
 // System calls for Linux x64
@@ -31,19 +31,14 @@
 // Inline system call wrapper
 static inline long syscall6(long num, long a1, long a2, long a3, long a4, long a5, long a6) {
     long ret;
+    register long r10 __asm__("r10") = a4;
+    register long r8 __asm__("r8") = a5;
+    register long r9 __asm__("r9") = a6;
     __asm__ volatile (
-        "mov %1, %%rax\n"
-        "mov %2, %%rdi\n"
-        "mov %3, %%rsi\n"
-        "mov %4, %%rdx\n"
-        "mov %5, %%r10\n"
-        "mov %6, %%r8\n"
-        "mov %7, %%r9\n"
-        "syscall\n"
-        "mov %%rax, %0\n"
-        : "=r"(ret)
-        : "r"(num), "r"(a1), "r"(a2), "r"(a3), "r"(a4), "r"(a5), "r"(a6)
-        : "rax", "rdi", "rsi", "rdx", "r10", "r8", "r9", "rcx", "r11", "memory"
+        "syscall"
+        : "=a"(ret)
+        : "a"(num), "D"(a1), "S"(a2), "d"(a3), "r"(r10), "r"(r8), "r"(r9)
+        : "rcx", "r11", "memory"
     );
     return ret;
 }
@@ -253,6 +248,7 @@ typedef struct {
     uint8_t* code;
     uint32_t position;
     uint32_t capacity;
+    bool has_error;     // Track buffer overflow errors
     
     // Time-travel state
     uint64_t temporal_markers[16];
@@ -454,10 +450,23 @@ void runtime_store_value(const char* name, RuntimeValue* value, bool to_future);
 RuntimeValue runtime_load_value(const char* name, bool from_future);
 void runtime_debug_memory(void);
 
+// Forward declarations for print functions
+static inline void print_str(const char* str);
+static inline void print_num(long num);
+
 // Inline helpers for machine code emission
 static inline void emit_byte(CodeBuffer* buf, uint8_t byte) {
     if (buf->position < buf->capacity) {
         buf->code[buf->position++] = byte;
+    } else {
+        // Buffer overflow - set error flag
+        buf->has_error = true;
+        // Optionally print error for debugging
+        print_str("[EMIT] ERROR: Buffer overflow at position ");
+        print_num(buf->position);
+        print_str(" (capacity ");
+        print_num(buf->capacity);
+        print_str(")\n");
     }
 }
 
