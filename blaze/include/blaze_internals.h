@@ -334,7 +334,8 @@ typedef enum {
     NODE_STRING,
     NODE_INLINE_ASM,
     NODE_FUNC_CALL,
-    NODE_UNARY_OP
+    NODE_UNARY_OP,
+    NODE_SOLID
 } NodeType;
 
 // AST Node - compact representation
@@ -413,6 +414,18 @@ typedef struct ASTNode {
             TokenType op;               // Unary operator (!, ~, etc.)
             uint16_t expr_idx;          // Expression to apply operator to
         } unary;
+        
+        // Solid number
+        struct {
+            uint32_t known_offset;      // Offset in string pool for known digits
+            uint16_t known_len;         // Length of known digits
+            char barrier_type;          // 'q','e','s','t','c','∞','u','x' (x=exact)
+            uint64_t gap_magnitude;     // 10^n or UINT64_MAX for infinity
+            uint16_t confidence_x1000;  // Confidence * 1000 (for integer storage)
+            uint32_t terminal_offset;   // Offset in string pool for terminal
+            uint8_t terminal_len;       // Terminal digit count
+            uint8_t terminal_type;      // 0=digits, 1=undefined(∅), 2=superposition({*})
+        } solid;
     } data;
 } ASTNode;
 

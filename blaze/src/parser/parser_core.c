@@ -31,6 +31,7 @@ static uint16_t parse_expression(Parser* p);
 static uint16_t parse_statement(Parser* p);
 static uint16_t parse_pipe_func_def(Parser* p);
 static uint16_t parse_action_block(Parser* p);
+static uint16_t parse_solid_number(Parser* p);
 // Removed parse_declare_block - handled inline now
 
 // Parser utilities
@@ -264,6 +265,194 @@ static uint16_t parse_number(Parser* p) {
     }
 }
 
+// Parse solid number
+static uint16_t parse_solid_number(Parser* p) {
+    Token* tok = advance(p);
+    uint16_t node = alloc_node(p, NODE_SOLID);
+    if (node == 0) return 0;
+    
+    const char* input = p->source + tok->start;
+    uint32_t pos = 0;
+    uint32_t len = tok->len;
+    
+    // Parse known digits (before first ...)
+    uint32_t known_start = pos;
+    while (pos < len && input[pos] != '.') {
+        pos++;
+    }
+    uint32_t known_len = pos;
+    
+    // Store known digits in string pool
+    uint32_t known_offset = p->string_pos;
+    if (p->string_pos + known_len + 1 > 4096) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    for (uint32_t i = 0; i < known_len; i++) {
+        p->string_pool[p->string_pos++] = input[i];
+    }
+    p->string_pool[p->string_pos++] = '\0';
+    
+    p->nodes[node].data.solid.known_offset = known_offset;
+    p->nodes[node].data.solid.known_len = known_len;
+    
+    // Skip first "..."
+    if (pos + 2 < len && input[pos] == '.' && input[pos+1] == '.' && input[pos+2] == '.') {
+        pos += 3;
+    }
+    
+    // Parse barrier spec in (...)
+    if (pos < len && input[pos] == '(') {
+        pos++; // skip '('
+        
+        // Check for "exact"
+        if (pos + 5 <= len && input[pos] == 'e' && input[pos+1] == 'x' && 
+            input[pos+2] == 'a' && input[pos+3] == 'c' && input[pos+4] == 't') {
+            p->nodes[node].data.solid.barrier_type = 'x';
+            p->nodes[node].data.solid.gap_magnitude = 0;
+            p->nodes[node].data.solid.confidence_x1000 = 1000; // 100%
+            pos += 5;
+        } else {
+            // Parse barrier type
+            if (pos < len) {
+                char barrier = input[pos];
+                if (barrier == 'q' || barrier == 'e' || barrier == 's' || 
+                    barrier == 't' || barrier == 'c' || barrier == 'u') {
+                    p->nodes[node].data.solid.barrier_type = barrier;
+                    pos++;
+                } else if (pos + 2 < len && (unsigned char)input[pos] == 0xE2 && 
+                          (unsigned char)input[pos+1] == 0x88 && (unsigned char)input[pos+2] == 0x9E) {
+                    // UTF-8 infinity ∞
+                    p->nodes[node].data.solid.barrier_type = 'i'; // Use 'i' for infinity internally
+                    pos += 3;
+                } else if (pos + 3 <= len && input[pos] == 'i' && input[pos+1] == 'n' && input[pos+2] == 'f') {
+                    p->nodes[node].data.solid.barrier_type = 'i';
+                    pos += 3;
+                }
+            }
+            
+            // Parse colon
+            if (pos < len && input[pos] == ':') {
+                pos++;
+                
+                // Parse gap magnitude
+                uint64_t gap = 0;
+                bool is_infinity = false;
+                
+                if (pos + 2 < len && input[pos] == '1' && input[pos+1] == '0') {
+                    // Parse 10^n format
+                    pos += 2;
+                    if (pos < len && input[pos] == '^') {
+                        pos++;
+                        // Parse exponent
+                        uint32_t exp = 0;
+                        while (pos < len && input[pos] >= '0' && input[pos] <= '9') {
+                            exp = exp * 10 + (input[pos] - '0');
+                            pos++;
+                        }
+                        // Calculate 10^exp (simplified - in real implementation use proper method)
+                        gap = 1;
+                        for (uint32_t i = 0; i < exp; i++) {
+                            gap *= 10;
+                        }
+                    }
+                } else if ((pos + 2 < len && (unsigned char)input[pos] == 0xE2 && 
+                           (unsigned char)input[pos+1] == 0x88 && (unsigned char)input[pos+2] == 0x9E) ||
+                          (pos + 3 <= len && input[pos] == 'i' && input[pos+1] == 'n' && input[pos+2] == 'f')) {
+                    is_infinity = true;
+                    gap = ~0ULL; // All bits set = max value
+                    pos += (input[pos] == 'i') ? 3 : 3;
+                }
+                
+                p->nodes[node].data.solid.gap_magnitude = gap;
+                
+                // Parse optional confidence
+                if (pos < len && input[pos] == '|') {
+                    pos++;
+                    // Parse confidence as decimal
+                    uint32_t conf_int = 0;
+                    uint32_t conf_frac = 0;
+                    uint32_t frac_digits = 0;
+                    
+                    // Integer part
+                    while (pos < len && input[pos] >= '0' && input[pos] <= '9') {
+                        conf_int = conf_int * 10 + (input[pos] - '0');
+                        pos++;
+                    }
+                    
+                    // Fractional part
+                    if (pos < len && input[pos] == '.') {
+                        pos++;
+                        while (pos < len && input[pos] >= '0' && input[pos] <= '9') {
+                            conf_frac = conf_frac * 10 + (input[pos] - '0');
+                            frac_digits++;
+                            pos++;
+                        }
+                    }
+                    
+                    // Convert to x1000 format
+                    uint32_t confidence = conf_int * 1000;
+                    for (uint32_t i = 0; i < frac_digits && i < 3; i++) {
+                        uint32_t divisor = 1;
+                        for (uint32_t j = i + 1; j < frac_digits; j++) divisor *= 10;
+                        confidence += (conf_frac / divisor) * (i == 0 ? 100 : i == 1 ? 10 : 1);
+                    }
+                    
+                    p->nodes[node].data.solid.confidence_x1000 = confidence;
+                } else {
+                    p->nodes[node].data.solid.confidence_x1000 = 1000; // Default 100%
+                }
+            }
+        }
+        
+        // Skip closing ')'
+        if (pos < len && input[pos] == ')') {
+            pos++;
+        }
+    }
+    
+    // Skip second "..."
+    if (pos + 2 < len && input[pos] == '.' && input[pos+1] == '.' && input[pos+2] == '.') {
+        pos += 3;
+    }
+    
+    // Parse terminal
+    uint32_t terminal_start = pos;
+    uint32_t terminal_len = len - pos;
+    uint8_t terminal_type = 0; // default: digits
+    
+    // Check for special terminals
+    if (terminal_len >= 3 && input[pos] == '{' && input[pos+1] == '*' && input[pos+2] == '}') {
+        terminal_type = 2; // superposition
+        terminal_len = 3;
+    } else if ((terminal_len >= 3 && (unsigned char)input[pos] == 0xE2 && 
+               (unsigned char)input[pos+1] == 0x88 && (unsigned char)input[pos+2] == 0x85) ||
+              (terminal_len >= 4 && input[pos] == 'n' && input[pos+1] == 'u' && 
+               input[pos+2] == 'l' && input[pos+3] == 'l')) {
+        terminal_type = 1; // undefined
+        terminal_len = (input[pos] == 'n') ? 4 : 3;
+    }
+    
+    // Store terminal in string pool
+    uint32_t terminal_offset = p->string_pos;
+    if (p->string_pos + terminal_len + 1 > 4096) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    for (uint32_t i = 0; i < terminal_len; i++) {
+        p->string_pool[p->string_pos++] = input[terminal_start + i];
+    }
+    p->string_pool[p->string_pos++] = '\0';
+    
+    p->nodes[node].data.solid.terminal_offset = terminal_offset;
+    p->nodes[node].data.solid.terminal_len = terminal_len;
+    p->nodes[node].data.solid.terminal_type = terminal_type;
+    
+    return node;
+}
+
 // Parse identifier
 static uint16_t parse_identifier(Parser* p) {
     Token* id_tok = advance(p);
@@ -314,6 +503,11 @@ static uint16_t parse_primary(Parser* p) {
     // Numbers
     if (check(p, TOK_NUMBER)) {
         return parse_number(p);
+    }
+    
+    // Solid numbers
+    if (check(p, TOK_SOLID_NUMBER)) {
+        return parse_solid_number(p);
     }
     
     // Math functions: math.sin(x), math.cos(x), etc.
