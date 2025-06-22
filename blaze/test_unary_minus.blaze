@@ -1,9 +1,0 @@
-var.v-x-[10]
-var.v-neg_x-[-x]
-print/ neg_x\
-
-var.v-y-[-5]
-print/ y\
-
-var.v-z-[-(3 + 2)]
-print/ z\

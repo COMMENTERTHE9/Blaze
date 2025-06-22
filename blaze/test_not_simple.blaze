@@ -1,7 +1,0 @@
-var.v-a-[5]
-var.v-not_a-[!a]
-print/ not_a\
-
-var.v-b-[0]
-var.v-not_b-[!b]
-print/ not_b\

@@ -1,7 +1,0 @@
-|test| func.can<
-    do/
-        print/ "Hello from function"\
-    \
-:>
-
-^test/

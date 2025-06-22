@@ -1,4 +1,0 @@
-var.v-a-[5]
-var.v-b-[3]
-var.v-result1-[a && b]
-print/ result1\
