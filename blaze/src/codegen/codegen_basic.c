@@ -403,6 +403,20 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
             break;
         }
         
+        case NODE_SOLID: {
+            // Create solid number from AST node
+            print_str("[EXPR] Loading solid number\n");
+            
+            // For now, store a pointer to the solid number in RAX
+            // In a real implementation, we'd allocate and initialize the solid number
+            // and return its address
+            
+            // Emit code to create solid number at runtime
+            // This is a placeholder - in real implementation would call solid_init_from_ast
+            emit_mov_reg_imm64(buf, RAX, expr_idx | 0x8000000000000000ULL);  // Mark as solid with high bit
+            break;
+        }
+        
         case NODE_BINARY_OP: {
             // Evaluate binary operation
             uint16_t left_idx = expr->data.binary.left_idx;
@@ -417,21 +431,43 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
             print_num(right_idx);
             print_str("\n");
             
-            // Check if this is a float operation
-            // We need to check if either operand is a float
+            // Check if this is a float or solid operation
+            // We need to check if either operand is a float or solid
             bool left_is_float = is_float_expression_impl(nodes, left_idx, string_pool);
             bool right_is_float = is_float_expression_impl(nodes, right_idx, string_pool);
+            bool left_is_solid = is_solid_expression_impl(nodes, left_idx, string_pool);
+            bool right_is_solid = is_solid_expression_impl(nodes, right_idx, string_pool);
             bool is_float = left_is_float || right_is_float;
+            bool is_solid = left_is_solid || right_is_solid;
             
             print_str("[BINARY] left_is_float=");
             print_num(left_is_float);
             print_str(" right_is_float=");
             print_num(right_is_float);
-            print_str(" => is_float=");
-            print_num(is_float);
+            print_str(" is_solid=");
+            print_num(is_solid);
             print_str("\n");
             
-            if (is_float) {
+            if (is_solid) {
+                print_str("[BINARY] Performing solid number operation\n");
+                // Solid number operations require special handling
+                // For now, just load a placeholder value
+                
+                // Generate left operand
+                generate_expression(buf, nodes, left_idx, symbols, string_pool);
+                emit_push_reg(buf, RAX);
+                
+                // Generate right operand  
+                generate_expression(buf, nodes, right_idx, symbols, string_pool);
+                emit_mov_reg_reg(buf, RDI, RAX);  // Right operand in RDI
+                
+                // Get left operand back
+                emit_pop_reg(buf, RSI);  // Left operand in RSI
+                
+                // TODO: Call appropriate solid arithmetic function
+                // For now, just return a placeholder
+                emit_mov_reg_imm64(buf, RAX, 0x8000000000000001ULL);  // Solid number marker
+            } else if (is_float) {
                 print_str("[BINARY] Performing float operation\n");
                 // Float operation using SSE
                 // Evaluate right operand first
