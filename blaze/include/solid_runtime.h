@@ -90,11 +90,17 @@ double solid_to_double(SolidNumber* solid);  // Best approximation
 char* solid_to_string(SolidNumber* solid);   // Full representation
 void solid_print(SolidNumber* solid);        // Debug print
 
-// Basic operations (to be implemented in Phase 5)
+// Basic arithmetic operations
 SolidNumber* solid_add(SolidNumber* a, SolidNumber* b);
 SolidNumber* solid_subtract(SolidNumber* a, SolidNumber* b);
 SolidNumber* solid_multiply(SolidNumber* a, SolidNumber* b);
 SolidNumber* solid_divide(SolidNumber* a, SolidNumber* b);
+
+// Comparison operations
+int solid_compare(SolidNumber* a, SolidNumber* b);  // Returns -1, 0, 1
+bool solid_equals(SolidNumber* a, SolidNumber* b);
+bool solid_less_than(SolidNumber* a, SolidNumber* b);
+bool solid_greater_than(SolidNumber* a, SolidNumber* b);
 
 // Type promotion
 SolidNumber* solid_from_int(int64_t value);
