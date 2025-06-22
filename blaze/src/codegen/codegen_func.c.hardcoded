@@ -1,0 +1,229 @@
+// FUNCTION DEFINITION AND CALL CODE GENERATION
+// Handles |name| entry.can< :> function definitions and ^name/ calls
+
+#include "blaze_internals.h"
+
+// Function symbol table entry
+typedef struct {
+    uint32_t name_hash;
+    uint32_t code_offset;  // Offset in code buffer where function starts
+    uint16_t param_count;
+    bool is_defined;
+} FunctionEntry;
+
+// Global function table (simple for now)
+static FunctionEntry function_table[256];
+static uint16_t function_count = 0;
+
+// Hash function name for lookup
+static uint32_t hash_string(const char* str) {
+    uint32_t hash = 5381;
+    while (*str) {
+        hash = ((hash << 5) + hash) + *str++;
+    }
+    return hash;
+}
+
+// Register or create function entry
+static FunctionEntry* get_or_create_function(const char* name) {
+    uint32_t hash = hash_string(name);
+    
+    // Linear search for now
+    for (uint16_t i = 0; i < function_count; i++) {
+        if (function_table[i].name_hash == hash) {
+            return &function_table[i];
+        }
+    }
+    
+    // Create new entry
+    if (function_count < 256) {
+        FunctionEntry* entry = &function_table[function_count++];
+        entry->name_hash = hash;
+        entry->code_offset = 0;
+        entry->param_count = 0;
+        entry->is_defined = false;
+        return entry;
+    }
+    
+    return NULL;
+}
+
+// Generate function prologue
+static void emit_function_prologue(CodeBuffer* buf) {
+    // Standard x64 function prologue
+    emit_push_reg(buf, RBP);              // push rbp
+    emit_mov_reg_reg(buf, RBP, RSP);      // mov rbp, rsp
+    
+    // Save callee-saved registers BEFORE allocating locals
+    emit_push_reg(buf, RBX);
+    emit_push_reg(buf, R12);
+    emit_push_reg(buf, R13);
+    emit_push_reg(buf, R14);
+    emit_push_reg(buf, R15);
+    
+    // Reserve space for locals (128 bytes for now)
+    // Also ensure 16-byte alignment (5 pushes + return address + rbp = 7*8 = 56 bytes)
+    // Need to align to 16, so add 8 more bytes: 128 + 8 = 136
+    emit_sub_reg_imm32(buf, RSP, 136);
+}
+
+// Generate function epilogue
+static void emit_function_epilogue(CodeBuffer* buf) {
+    // Remove local variable space (must match prologue)
+    emit_add_reg_imm32(buf, RSP, 136);
+    
+    // Restore callee-saved registers in reverse order
+    emit_pop_reg(buf, R15);
+    emit_pop_reg(buf, R14);
+    emit_pop_reg(buf, R13);
+    emit_pop_reg(buf, R12);
+    emit_pop_reg(buf, RBX);
+    
+    // Restore frame pointer
+    emit_pop_reg(buf, RBP);               // pop rbp
+    emit_byte(buf, 0xC3);                 // ret
+}
+
+// Generate code for function definition
+void generate_func_def(CodeBuffer* buf, ASTNode* nodes, uint16_t func_idx, 
+                      SymbolTable* symbols, char* string_pool) {
+    // TEMPORARY: Just generate a hardcoded function for "test"
+    print_str("generate_func_def: USING HARDCODED FUNCTION\n");
+    
+    // Get or create function entry for "test"
+    FunctionEntry* entry = get_or_create_function("test");
+    if (!entry) {
+        print_str("  ERROR: Could not create function entry\n");
+        return;
+    }
+    
+    if (entry->is_defined) {
+        print_str("  Function 'test' already defined\n");
+        return;
+    }
+    
+    // Mark function location
+    entry->code_offset = buf->position;
+    entry->is_defined = true;
+    
+    // Generate function prologue
+    emit_function_prologue(buf);
+    
+    // Generate hardcoded body: print "5"
+    // mov rax, 1 (sys_write)
+    emit_mov_reg_imm64(buf, RAX, 1);
+    // mov rdi, 1 (stdout)
+    emit_mov_reg_imm64(buf, RDI, 1);
+    // Load '5' into buffer
+    emit_mov_reg_imm64(buf, RSI, '5');
+    emit_push_reg(buf, RSI);
+    emit_mov_reg_reg(buf, RSI, RSP);
+    // mov rdx, 1 (length)
+    emit_mov_reg_imm64(buf, RDX, 1);
+    // syscall
+    emit_syscall(buf);
+    // Clean up stack
+    emit_pop_reg(buf, RSI);
+    
+    // Add newline
+    emit_mov_reg_imm64(buf, RAX, 1);
+    emit_mov_reg_imm64(buf, RDI, 1);
+    emit_mov_reg_imm64(buf, RSI, '\n');
+    emit_push_reg(buf, RSI);
+    emit_mov_reg_reg(buf, RSI, RSP);
+    emit_mov_reg_imm64(buf, RDX, 1);
+    emit_syscall(buf);
+    emit_pop_reg(buf, RSI);
+    
+    // Generate function epilogue
+    emit_function_epilogue(buf);
+    
+    print_str("  Function 'test' generated ");
+    print_num(buf->position - entry->code_offset);
+    print_str(" bytes\n");
+}
+
+// Generate code for function call
+void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_idx,
+                       SymbolTable* symbols, char* string_pool) {
+    // Debug output
+    print_str("generate_func_call: call_idx=");
+    print_num(call_idx);
+    print_str("\n");
+    
+    ASTNode* call_node = &nodes[call_idx];
+    
+    // Get function name
+    uint16_t name_idx = call_node->data.binary.left_idx; // Function name in left
+    if (name_idx == 0 || name_idx >= 4096) return;
+    
+    ASTNode* name_node = &nodes[name_idx];
+    if (name_node->type != NODE_IDENTIFIER) return;
+    
+    const char* func_name = &string_pool[name_node->data.ident.name_offset];
+    
+    // Look up function
+    FunctionEntry* entry = get_or_create_function(func_name);
+    if (!entry) return;
+    
+    // TODO: Handle parameters - for now assume no params
+    // Parameters would be passed in RDI, RSI, RDX, RCX, R8, R9 (System V ABI)
+    
+    // Save volatile registers if needed
+    emit_push_reg(buf, RAX);
+    emit_push_reg(buf, RCX);
+    emit_push_reg(buf, RDX);
+    emit_push_reg(buf, RSI);
+    emit_push_reg(buf, RDI);
+    emit_push_reg(buf, R8);
+    emit_push_reg(buf, R9);
+    emit_push_reg(buf, R10);
+    emit_push_reg(buf, R11);
+    
+    if (entry->is_defined) {
+        // Function is already defined, calculate relative offset
+        print_str("  Function '");
+        print_str(func_name);
+        print_str("' is at offset ");
+        print_num(entry->code_offset);
+        print_str(", current position is ");
+        print_num(buf->position);
+        print_str("\n");
+        
+        // The call instruction is 5 bytes: 0xE8 + 4-byte offset
+        // The offset is calculated from the END of the call instruction
+        int32_t offset = entry->code_offset - (buf->position + 5);
+        print_str("  Calculated jump offset: ");
+        print_num(offset);
+        print_str(" (target will be ");
+        print_num(buf->position + 5 + offset);
+        print_str(")\n");
+        
+        emit_byte(buf, 0xE8); // CALL rel32
+        emit_dword(buf, offset);
+    } else {
+        // Forward reference - will need fixup later
+        // For now, emit a placeholder
+        emit_byte(buf, 0xE8); // CALL rel32
+        uint32_t fixup_location = buf->position;
+        emit_dword(buf, 0); // Placeholder
+        
+        // TODO: Add to fixup list
+    }
+    
+    // Restore volatile registers
+    emit_pop_reg(buf, R11);
+    emit_pop_reg(buf, R10);
+    emit_pop_reg(buf, R9);
+    emit_pop_reg(buf, R8);
+    emit_pop_reg(buf, RDI);
+    emit_pop_reg(buf, RSI);
+    emit_pop_reg(buf, RDX);
+    emit_pop_reg(buf, RCX);
+    emit_pop_reg(buf, RAX);
+}
+
+// Initialize function code generation
+void init_function_codegen(void) {
+    function_count = 0;
+}

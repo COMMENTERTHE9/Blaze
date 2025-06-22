@@ -1,0 +1,18 @@
+var.v-a-[5]
+var.v-b-[0]
+var.v-and_result-[a && b]
+print/ "5 && 0 = "\
+print/ and_result\
+print/ "\n"\
+
+var.v-or_result-[a || b]
+print/ "5 || 0 = "\
+print/ or_result\
+print/ "\n"\
+
+var.v-c-[0]
+var.v-d-[0]
+var.v-or_zero-[c || d]
+print/ "0 || 0 = "\
+print/ or_zero\
+print/ "\n"\

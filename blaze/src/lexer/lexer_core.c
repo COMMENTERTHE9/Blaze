@@ -170,13 +170,13 @@ static TokenType detect_keyword(const char* start, uint32_t len) {
 
 // Main lexer - directly emits tokens to buffer
 uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
-    print_str("[LEXER] lex_blaze called with len=");
+    print_str("[LEXER] lex_blaze called UPDATED VERSION with len=");
     print_num((long)len);  // Explicit cast to long
     print_str(" input addr=");
     print_num((uint64_t)input);
     print_str(" output addr=");
     print_num((uint64_t)output);
-    print_str("\n");
+    print_str(" CHECK_PRINT_WORKING\n");
     
     uint32_t pos = 0;
     uint32_t token_count = 0;
@@ -212,7 +212,12 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
         
         // Multi-char tokens - hand-rolled state machine
         if (ch == '<') {
-            if (pos + 1 < len) {
+            if (pos + 2 < len && input[pos + 1] == '<' && input[pos + 2] == '.') {
+                // Bitwise left shift: <<.
+                tok->type = TOK_BIT_LSHIFT;
+                tok->len = 3;
+                pos += 3;
+            } else if (pos + 1 < len) {
                 if (input[pos + 1] == '<') {
                     tok->type = TOK_TIMING_ONTO;
                     tok->len = 2;
@@ -233,7 +238,12 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
             }
         }
         else if (ch == '>') {
-            if (pos + 1 < len && input[pos + 1] == '>') {
+            if (pos + 2 < len && input[pos + 1] == '>' && input[pos + 2] == '.') {
+                // Bitwise right shift: >>.
+                tok->type = TOK_BIT_RSHIFT;
+                tok->len = 3;
+                pos += 3;
+            } else if (pos + 1 < len && input[pos + 1] == '>') {
                 tok->type = TOK_TIMING_INTO;
                 tok->len = 2;
                 pos += 2;
@@ -609,6 +619,9 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
         }
         else {
             // Single character token
+            if (ch == '<') {
+                print_str("[LEXER] Entering single char switch with '<'\n");
+            }
             switch (ch) {
                 case '|': 
                     // Check for ||. (bitwise) or || (logical)
@@ -720,8 +733,34 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     }
                     break;
                 case '<':
-                    // Check for <<<, <=, or <<
-                    if (pos + 2 < len && input[pos + 1] == '<' && input[pos + 2] == '<') {
+                    // Check for <<., <=, or <<
+                    print_str("[LEXER] Processing < at pos ");
+                    print_num(pos);
+                    print_str(" len=");
+                    print_num(len);
+                    if (pos + 2 < len) {
+                        print_str(" next='");
+                        char c = input[pos+1];
+                        if (c >= 32 && c <= 126) {
+                            char buf[2] = {c, 0};
+                            print_str(buf);
+                        } else {
+                            print_num(c);
+                        }
+                        print_str("' next2='");
+                        c = input[pos+2];
+                        if (c >= 32 && c <= 126) {
+                            char buf[2] = {c, 0};
+                            print_str(buf);
+                        } else {
+                            print_num(c);
+                        }
+                        print_str("'");
+                    }
+                    print_str("\n");
+                    if (pos + 2 < len && input[pos + 1] == '<' && input[pos + 2] == '.') {
+                        // Bitwise left shift: <<.
+                        print_str("[LEXER] Found <<.\n");
                         tok->type = TOK_BIT_LSHIFT;
                         tok->len = 3;
                         pos += 3;
@@ -740,8 +779,9 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     }
                     break;
                 case '>':
-                    // Check for >>>, >=, or >>
-                    if (pos + 2 < len && input[pos + 1] == '>' && input[pos + 2] == '>') {
+                    // Check for >>., >=, or >>
+                    if (pos + 2 < len && input[pos + 1] == '>' && input[pos + 2] == '.') {
+                        // Bitwise right shift: >>.
                         tok->type = TOK_BIT_RSHIFT;
                         tok->len = 3;
                         pos += 3;

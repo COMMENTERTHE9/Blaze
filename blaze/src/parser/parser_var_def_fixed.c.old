@@ -1,0 +1,169 @@
+// Fixed parse_var_def that avoids union overlap issues
+
+// Parse variable definition - handles all variable syntaxes
+static uint16_t parse_var_def(Parser* p) {
+    Token* var_tok = advance(p); // consume var token
+    
+    uint16_t var_node = alloc_node(p, NODE_VAR_DEF);
+    if (var_node == 0) return 0;
+    
+    // Determine variable type from token
+    uint8_t var_type = 0;
+    switch (var_tok->type) {
+        case TOK_VAR: var_type = 0; break;
+        case TOK_CONST: var_type = 1; break;
+        case TOK_VAR_INT: var_type = 2; break;
+        case TOK_VAR_FLOAT: var_type = 3; break;
+        case TOK_VAR_STRING: var_type = 4; break;
+        case TOK_VAR_BOOL: var_type = 5; break;
+    }
+    
+    // Extract variable name from the token
+    uint32_t name_start, name_len;
+    
+    // Check which syntax we have
+    if (var_tok->type == TOK_VAR_INT || var_tok->type == TOK_VAR_FLOAT ||
+        var_tok->type == TOK_VAR_STRING || var_tok->type == TOK_VAR_BOOL ||
+        var_tok->type == TOK_CONST) {
+        // Typed variable: var.t-name-
+        name_start = var_tok->start + 6; // Skip "var.t-"
+        name_len = var_tok->len - 6; // Remove "var.t-"
+        
+        // Check if it ends with "-" and remove it
+        if (name_len > 0 && p->source[var_tok->start + var_tok->len - 1] == '-') {
+            name_len--;
+        }
+    }
+    else if (var_tok->type == TOK_VAR) {
+        // TOK_VAR can be old syntax (var.v-name-) or new syntax (var.name-)
+        const char* tok_str = &p->source[var_tok->start];
+        
+        if (var_tok->len > 6 && tok_str[4] == 'v' && tok_str[5] == '-') {
+            // Old syntax: var.v-name-
+            name_start = var_tok->start + 6; // Skip "var.v-"
+            name_len = var_tok->len - 6; // Remove "var.v-"
+            
+            if (name_len > 0 && p->source[var_tok->start + var_tok->len - 1] == '-') {
+                name_len--;
+            }
+        } 
+        else if (var_tok->len > 4 && tok_str[3] == '.') {
+            // New simplified syntax: var.name-
+            name_start = var_tok->start + 4; // Skip "var."
+            
+            // Find where name ends (at '-' or end of token)
+            name_len = 0;
+            for (uint32_t i = 4; i < var_tok->len; i++) {
+                if (p->source[var_tok->start + i] == '-') {
+                    break;
+                }
+                name_len++;
+            }
+        } else {
+            p->has_error = true;
+            return 0;
+        }
+    }
+    
+    // Bounds check
+    if (name_len == 0 || name_len > 256) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Store the variable name in string pool
+    uint32_t name_offset = p->string_pos;
+    for (uint32_t i = 0; i < name_len; i++) {
+        char c = p->source[name_start + i];
+        if (p->string_pos >= 4096) {
+            p->has_error = true;
+            return 0;
+        }
+        p->string_pool[p->string_pos++] = c;
+    }
+    p->string_pool[p->string_pos++] = '\0';
+    
+    // Store name info in ident struct
+    p->nodes[var_node].data.ident.name_offset = name_offset;
+    p->nodes[var_node].data.ident.name_len = name_len;
+    
+    // Initialize packed data to just the type
+    uint32_t packed_data = ((uint32_t)var_type << 16);
+    
+    // Check for initializer value in brackets [value]
+    if (check(p, TOK_BRACKET_OPEN)) {
+        advance(p); // consume [
+        
+        // Parse the value inside brackets
+        uint16_t init_expr = 0;
+        
+        if (var_type == 4 && check(p, TOK_STRING)) {
+            // String variable with string literal
+            Token* str_tok = advance(p);
+            uint16_t str_node = alloc_node(p, NODE_STRING);
+            if (str_node == 0) return 0;
+            
+            uint32_t str_offset = store_string_literal(p, str_tok);
+            p->nodes[str_node].data.ident.name_offset = str_offset;
+            p->nodes[str_node].data.ident.name_len = str_tok->len - 2;
+            init_expr = str_node;
+        }
+        else {
+            // Parse as expression
+            init_expr = parse_expression(p);
+        }
+        
+        // Expect closing bracket
+        if (!match(p, TOK_BRACKET_CLOSE)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        // Pack init expression into lower 16 bits
+        packed_data |= (init_expr & 0xFFFF);
+    }
+    
+    // Store packed data (type in upper 16 bits, init in lower 16 bits)
+    // This uses timing.temporal_offset which doesn't overlap with ident fields
+    p->nodes[var_node].data.timing.temporal_offset = packed_data;
+    
+    return var_node;
+}
+
+// Helper functions to extract packed data
+static inline uint8_t get_var_type(ASTNode* var_node) {
+    return (var_node->data.timing.temporal_offset >> 16) & 0xFF;
+}
+
+static inline uint16_t get_var_init_expr(ASTNode* var_node) {
+    return var_node->data.timing.temporal_offset & 0xFFFF;
+}
+
+// Example usage in code generation:
+void generate_var_def(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx, 
+                      SymbolTable* symbols, char* string_pool) {
+    ASTNode* var_node = &nodes[node_idx];
+    
+    // Get variable name (safe - no overlap)
+    const char* name = &string_pool[var_node->data.ident.name_offset];
+    uint16_t name_len = var_node->data.ident.name_len;
+    
+    // Get variable type and init expression (unpacked from temporal_offset)
+    uint8_t var_type = get_var_type(var_node);
+    uint16_t init_expr = get_var_init_expr(var_node);
+    
+    print_str("Variable: name='");
+    for (uint16_t i = 0; i < name_len; i++) {
+        char c[2] = {name[i], '\0'};
+        print_str(c);
+    }
+    print_str("' len=");
+    print_num(name_len);
+    print_str(" type=");
+    print_num(var_type);
+    print_str(" init=");
+    print_num(init_expr);
+    print_str("\n");
+    
+    // Continue with code generation...
+}

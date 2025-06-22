@@ -1,0 +1,632 @@
+// BLAZE PARSER V2 - Handles new Blaze syntax
+// Recursive descent parser for Blaze language constructs
+
+#include "blaze_internals.h"
+
+// Parser state
+typedef struct {
+    Token* tokens;
+    uint32_t count;
+    uint32_t current;
+    
+    // AST node pool
+    ASTNode* nodes;
+    uint32_t node_count;
+    uint32_t node_capacity;
+    
+    // String pool for identifiers
+    char* string_pool;
+    uint32_t string_pos;
+    
+    // Source code reference
+    const char* source;
+    
+    // Error state
+    bool has_error;
+    uint32_t error_pos;
+    char error_msg[256];
+} Parser;
+
+// Forward declarations
+static uint16_t parse_expression(Parser* p);
+static uint16_t parse_statement(Parser* p);
+static uint16_t parse_block(Parser* p);
+
+// Parser utilities
+static inline bool at_end(Parser* p) {
+    return p->current >= p->count || p->tokens[p->current].type == TOK_EOF;
+}
+
+static inline Token* peek(Parser* p) {
+    if (at_end(p)) return NULL;
+    return &p->tokens[p->current];
+}
+
+static inline Token* advance(Parser* p) {
+    if (!at_end(p)) p->current++;
+    return &p->tokens[p->current - 1];
+}
+
+static inline bool check(Parser* p, TokenType type) {
+    if (at_end(p)) return false;
+    return peek(p)->type == type;
+}
+
+static bool match(Parser* p, TokenType type) {
+    if (check(p, type)) {
+        advance(p);
+        return true;
+    }
+    return false;
+}
+
+// Allocate AST node from pool
+static uint16_t alloc_node(Parser* p, NodeType type) {
+    if (p->node_count >= p->node_capacity) {
+        p->has_error = true;
+        return 0xFFFF; // Use 0xFFFF as error value instead of 0
+    }
+    
+    uint16_t idx = p->node_count++;
+    ASTNode* node = &p->nodes[idx];
+    node->type = type;
+    
+    // Zero out data union
+    uint64_t* data = (uint64_t*)&node->data;
+    data[0] = 0;
+    data[1] = 0;
+    
+    return idx;
+}
+
+// Store string in pool
+static uint32_t store_string(Parser* p, Token* tok) {
+    uint32_t offset = p->string_pos;
+    
+    // Copy token text to string pool
+    for (uint16_t i = 0; i < tok->len; i++) {
+        if (p->string_pos >= 4096) { // String pool limit
+            p->has_error = true;
+            return 0;
+        }
+        p->string_pool[p->string_pos++] = p->source[tok->start + i];
+    }
+    
+    // Null terminate
+    p->string_pool[p->string_pos++] = '\0';
+    
+    return offset;
+}
+
+// Extract identifier from complex token
+static uint32_t extract_identifier(Parser* p, Token* tok, uint32_t skip_prefix) {
+    uint32_t offset = p->string_pos;
+    
+    // Skip prefix and extract identifier part
+    uint32_t start = tok->start + skip_prefix;
+    uint32_t end = tok->start + tok->len;
+    
+    // Find where identifier ends (at '-' or '[')
+    for (uint32_t i = start; i < end; i++) {
+        char c = p->source[i];
+        if (c == '-' || c == '[') {
+            end = i;
+            break;
+        }
+    }
+    
+    // Copy identifier
+    for (uint32_t i = start; i < end; i++) {
+        if (p->string_pos >= 4096) {
+            p->has_error = true;
+            return 0;
+        }
+        p->string_pool[p->string_pos++] = p->source[i];
+    }
+    
+    p->string_pool[p->string_pos++] = '\0';
+    return offset;
+}
+
+// Parse number literal
+static uint16_t parse_number(Parser* p) {
+    Token* num_tok = advance(p);
+    uint16_t node_idx = alloc_node(p, NODE_NUMBER);
+    
+    if (node_idx == 0xFFFF) return 0xFFFF;
+    
+    // Convert string to number
+    int64_t value = 0;
+    bool negative = false;
+    uint32_t i = 0;
+    
+    if (num_tok->len > 0 && p->source[num_tok->start] == '-') {
+        negative = true;
+        i = 1;
+    }
+    
+    for (; i < num_tok->len; i++) {
+        char c = p->source[num_tok->start + i];
+        if (c >= '0' && c <= '9') {
+            value = value * 10 + (c - '0');
+        }
+    }
+    
+    if (negative) value = -value;
+    
+    p->nodes[node_idx].data.number = value;
+    return node_idx;
+}
+
+// Parse identifier
+static uint16_t parse_identifier(Parser* p) {
+    Token* id_tok = advance(p);
+    uint16_t node_idx = alloc_node(p, NODE_IDENTIFIER);
+    
+    if (node_idx == 0xFFFF) return 0xFFFF;
+    
+    uint32_t str_offset = store_string(p, id_tok);
+    p->nodes[node_idx].data.ident.name_offset = str_offset;
+    p->nodes[node_idx].data.ident.name_len = id_tok->len;
+    
+    return node_idx;
+}
+
+// Parse parameter: /{@param:name}
+static uint16_t parse_parameter(Parser* p) {
+    Token* param_tok = advance(p);
+    uint16_t node_idx = alloc_node(p, NODE_IDENTIFIER);
+    
+    if (node_idx == 0xFFFF) return 0xFFFF;
+    
+    // Extract parameter name after @param:
+    uint32_t name_start = 0;
+    for (uint32_t i = 0; i < param_tok->len; i++) {
+        if (p->source[param_tok->start + i] == ':') {
+            name_start = i + 1;
+            break;
+        }
+    }
+    
+    // Store parameter name
+    uint32_t offset = p->string_pos;
+    for (uint32_t i = name_start; i < param_tok->len - 1; i++) { // -1 to skip closing }
+        if (p->string_pos >= 4096) {
+            p->has_error = true;
+            return 0;
+        }
+        p->string_pool[p->string_pos++] = p->source[param_tok->start + i];
+    }
+    p->string_pool[p->string_pos++] = '\0';
+    
+    p->nodes[node_idx].data.ident.name_offset = offset;
+    p->nodes[node_idx].data.ident.name_len = param_tok->len - name_start - 1;
+    
+    return node_idx;
+}
+
+// Parse matrix: [:::name1-name2-name3[val1;val2;...]]
+static uint16_t parse_matrix(Parser* p) {
+    Token* matrix_tok = advance(p); // consume TOK_MATRIX_START
+    
+    uint16_t matrix_node = alloc_node(p, NODE_ARRAY_4D);
+    if (matrix_node == 0xFFFF) return 0xFFFF;
+    
+    // Extract the entire matrix content from the token
+    // The lexer gives us the whole matrix as one token
+    uint32_t content_start = matrix_tok->start + 4; // Skip "[:::"
+    uint32_t content_end = matrix_tok->start + matrix_tok->len - 1; // Skip final "]"
+    
+    // Parse dimension names (everything before the inner '[')
+    uint32_t inner_bracket_pos = content_start;
+    while (inner_bracket_pos < content_end && p->source[inner_bracket_pos] != '[') {
+        inner_bracket_pos++;
+    }
+    
+    // Store dimension names in string pool
+    uint32_t dims_offset = p->string_pos;
+    for (uint32_t i = content_start; i < inner_bracket_pos; i++) {
+        if (p->string_pos >= 4096) {
+            p->has_error = true;
+            return 0xFFFF;
+        }
+        p->string_pool[p->string_pos++] = p->source[i];
+    }
+    p->string_pool[p->string_pos++] = '\0';
+    
+    // Store dimension info
+    p->nodes[matrix_node].data.array_4d.name_idx = dims_offset;
+    
+    // TODO: Parse the values inside the inner brackets
+    // For now, we just store the structure
+    
+    return matrix_node;
+}
+
+// Parse c.split._[description_count]
+static uint16_t parse_split(Parser* p) {
+    Token* split_tok = advance(p); // consume TOK_C_SPLIT
+    
+    uint16_t split_node = alloc_node(p, NODE_GAP_COMPUTE);
+    if (split_node == 0xFFFF) return 0xFFFF;
+    
+    // Extract content from brackets
+    uint32_t bracket_start = 0;
+    for (uint32_t i = 0; i < split_tok->len; i++) {
+        if (p->source[split_tok->start + i] == '[') {
+            bracket_start = i + 1;
+            break;
+        }
+    }
+    
+    if (bracket_start > 0) {
+        // Find end of description and count
+        uint32_t desc_end = split_tok->start + split_tok->len - 1; // Skip ']'
+        
+        // Extract count from end (number, null, none, all, ever)
+        uint32_t count_start = desc_end - 1;
+        while (count_start > split_tok->start + bracket_start) {
+            char c = p->source[count_start];
+            if (c == '_') {
+                break;
+            }
+            count_start--;
+        }
+        
+        // Store description in string pool
+        uint32_t desc_offset = p->string_pos;
+        for (uint32_t i = split_tok->start + bracket_start; i < count_start; i++) {
+            if (p->string_pos >= 4096) {
+                p->has_error = true;
+                return 0xFFFF;
+            }
+            p->string_pool[p->string_pos++] = p->source[i];
+        }
+        p->string_pool[p->string_pos++] = '\0';
+        
+        p->nodes[split_node].data.gap_compute.var_idx = desc_offset;
+        
+        // TODO: Parse and store the count value
+    }
+    
+    return split_node;
+}
+
+// Parse variable definition: var.v-name-[value]
+static uint16_t parse_var_def(Parser* p) {
+    Token* var_tok = advance(p); // consume TOK_VAR
+    
+    uint16_t var_node = alloc_node(p, NODE_VAR_DEF);
+    if (var_node == 0xFFFF) return 0xFFFF;
+    
+    // Extract variable name from token
+    uint32_t name_offset = extract_identifier(p, var_tok, 6); // Skip "var.v-"
+    if (p->has_error) {
+        return 0xFFFF;
+    }
+    p->nodes[var_node].data.ident.name_offset = name_offset;
+    
+    // Check if there's an initialization value
+    if (check(p, TOK_BRACKET_OPEN)) {
+        advance(p); // consume [
+        
+        // Parse initialization expression
+        uint16_t init_expr = parse_expression(p);
+        
+        // Store init expression in high bits of name_len (hacky but works)
+        p->nodes[var_node].data.ident.name_len |= (init_expr << 16);
+        
+        if (!match(p, TOK_BRACKET_CLOSE)) {
+            p->has_error = true;
+            if (p->current < p->count) {
+                p->error_pos = p->tokens[p->current].start;
+            }
+            return 0;
+        }
+    }
+    
+    return var_node;
+}
+
+// Parse function definition: |function_name| method.can< params< :>
+static uint16_t parse_func_def(Parser* p) {
+    advance(p); // consume opening |
+    
+    uint16_t func_node = alloc_node(p, NODE_FUNC_DEF);
+    if (func_node == 0xFFFF) return 0xFFFF;
+    
+    // Function name
+    if (check(p, TOK_IDENTIFIER)) {
+        Token* name_tok = advance(p);
+        uint32_t name_offset = store_string(p, name_tok);
+        p->nodes[func_node].data.timing.expr_idx = name_offset;
+    }
+    
+    if (!match(p, TOK_PIPE)) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Check for method.can< syntax
+    if (check(p, TOK_IDENTIFIER)) {
+        Token* method = peek(p);
+        // Check if it starts with "method."
+        if (method->len > 7 && p->source[method->start] == 'm') {
+            advance(p);
+            
+            // Parse parameters if < follows
+            if (match(p, TOK_LT) || match(p, TOK_BEFORE)) {
+                // Parse parameter list
+                while (!at_end(p) && !check(p, TOK_FUNC_CLOSE)) {
+                    if (check(p, TOK_PARAM)) {
+                        parse_parameter(p);
+                    } else {
+                        advance(p);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Parse function body
+    if (match(p, TOK_FUNC_CLOSE)) {
+        // Function has a body
+        uint16_t body = parse_block(p);
+        p->nodes[func_node].data.timing.temporal_offset = body;
+    }
+    
+    return func_node;
+}
+
+// Parse conditional: f.ens, f.ver, etc.
+static uint16_t parse_conditional(Parser* p) {
+    Token* cond_tok = advance(p);
+    
+    uint16_t cond_node = alloc_node(p, NODE_CONDITIONAL);
+    if (cond_node == 0xFFFF) return 0xFFFF;
+    
+    // Store conditional type
+    p->nodes[cond_node].data.binary.op = cond_tok->type;
+    
+    // Parse condition parameters
+    if (match(p, TOK_SLASH) || match(p, TOK_ACTION_CONTINUE)) {
+        uint16_t param = parse_expression(p);
+        p->nodes[cond_node].data.binary.left_idx = param;
+    }
+    
+    // Parse condition body
+    if (match(p, TOK_FORWARD_CONN) || match(p, TOK_BACKWARD_CONN)) {
+        uint16_t body = parse_statement(p);
+        p->nodes[cond_node].data.binary.right_idx = body;
+    }
+    
+    return cond_node;
+}
+
+// Parse timeline: timeline-[name]
+static uint16_t parse_timeline(Parser* p) {
+    Token* timeline_tok = advance(p);
+    
+    uint16_t timeline_node = alloc_node(p, NODE_JUMP);
+    if (timeline_node == 0xFFFF) return 0xFFFF;
+    
+    // Extract timeline name
+    uint32_t name_start = 0;
+    for (uint32_t i = 0; i < timeline_tok->len; i++) {
+        if (p->source[timeline_tok->start + i] == '[') {
+            name_start = i + 1;
+            break;
+        }
+    }
+    
+    if (name_start > 0) {
+        uint32_t offset = p->string_pos;
+        for (uint32_t i = name_start; i < timeline_tok->len - 1; i++) {
+            if (p->string_pos >= 4096) {
+                p->has_error = true;
+                return 0;
+            }
+            p->string_pool[p->string_pos++] = p->source[timeline_tok->start + i];
+        }
+        p->string_pool[p->string_pos++] = '\0';
+        
+        p->nodes[timeline_node].data.ident.name_offset = offset;
+    }
+    
+    return timeline_node;
+}
+
+// Parse action block: do/ ... / ... backslash
+static uint16_t parse_action_block(Parser* p) {
+    advance(p); // consume TOK_DO
+    
+    uint16_t action_node = alloc_node(p, NODE_ACTION_BLOCK);
+    if (action_node == 0xFFFF) return 0xFFFF;
+    
+    uint16_t first_action = 0;
+    uint16_t last_action = 0;
+    
+    while (!at_end(p) && !check(p, TOK_ACTION_END)) {
+        uint16_t stmt = parse_statement(p);
+        
+        if (first_action == 0) {
+            first_action = stmt;
+            p->nodes[action_node].data.binary.left_idx = first_action;
+        }
+        
+        // Chain actions
+        if (last_action != 0) {
+            p->nodes[last_action].data.binary.right_idx = stmt;
+        }
+        last_action = stmt;
+        
+        // Continue marker
+        match(p, TOK_ACTION_CONTINUE);
+    }
+    
+    match(p, TOK_ACTION_END); // Consume ending backslash
+    
+    return action_node;
+}
+
+// Parse expression
+static uint16_t parse_expression(Parser* p) {
+    // Parameters
+    if (check(p, TOK_PARAM)) {
+        return parse_parameter(p);
+    }
+    
+    // Numbers
+    if (check(p, TOK_NUMBER)) {
+        return parse_number(p);
+    }
+    
+    // Identifiers
+    if (check(p, TOK_IDENTIFIER)) {
+        return parse_identifier(p);
+    }
+    
+    // Matrix
+    if (check(p, TOK_MATRIX_START)) {
+        return parse_matrix(p);
+    }
+    
+    // Split operations
+    if (check(p, TOK_C_SPLIT)) {
+        return parse_split(p);
+    }
+    
+    // Temporal operators
+    if (check(p, TOK_BEFORE) || check(p, TOK_AFTER) ||
+        check(p, TOK_ONTO) || check(p, TOK_INTO) || check(p, TOK_BOTH)) {
+        Token* op = advance(p);
+        uint16_t timing_node = alloc_node(p, NODE_TIMING_OP);
+        p->nodes[timing_node].data.timing.timing_op = op->type;
+        p->nodes[timing_node].data.timing.expr_idx = parse_expression(p);
+        return timing_node;
+    }
+    
+    p->has_error = true;
+    if (p->current < p->count) {
+        p->error_pos = p->tokens[p->current].start;
+    }
+    return 0xFFFF;
+}
+
+// Parse block of statements
+static uint16_t parse_block(Parser* p) {
+    uint16_t first_stmt = 0;
+    uint16_t last_stmt = 0;
+    
+    while (!at_end(p) && !check(p, TOK_FUNC_CLOSE) && !check(p, TOK_ACTION_END)) {
+        uint16_t stmt = parse_statement(p);
+        
+        if (p->has_error) break;
+        
+        if (first_stmt == 0) {
+            first_stmt = stmt;
+        }
+        
+        if (last_stmt != 0) {
+            p->nodes[last_stmt].data.binary.right_idx = stmt;
+        }
+        last_stmt = stmt;
+    }
+    
+    return first_stmt;
+}
+
+// Parse statement
+static uint16_t parse_statement(Parser* p) {
+    // Variable definition
+    if (check(p, TOK_VAR)) {
+        return parse_var_def(p);
+    }
+    
+    // Function definition
+    if (check(p, TOK_PIPE)) {
+        return parse_func_def(p);
+    }
+    
+    // Conditionals
+    if (check(p, TOK_COND_ENS) || check(p, TOK_COND_VER) || 
+        check(p, TOK_COND_CHK) || check(p, TOK_COND_TRY) ||
+        check(p, TOK_COND_GRD) || check(p, TOK_COND_UNL) ||
+        check(p, TOK_COND_IF) || check(p, TOK_COND_WHL) ||
+        check(p, TOK_COND_UNT) || check(p, TOK_COND_OBS) ||
+        check(p, TOK_COND_DET) || check(p, TOK_COND_REC) ||
+        check(p, TOK_COND_FS) || check(p, TOK_COND_RTE) ||
+        check(p, TOK_COND_MON) || check(p, TOK_COND_EVAL) ||
+        check(p, TOK_COND_DEC) || check(p, TOK_COND_ASS) ||
+        check(p, TOK_COND_MSR)) {
+        return parse_conditional(p);
+    }
+    
+    // Timeline
+    if (check(p, TOK_TIMELINE_DEF) || check(p, TOK_TIMELINE_JUMP)) {
+        return parse_timeline(p);
+    }
+    
+    // Action block
+    if (check(p, TOK_DO)) {
+        return parse_action_block(p);
+    }
+    
+    // Bounce
+    if (check(p, TOK_BNC)) {
+        advance(p);
+        uint16_t bnc_node = alloc_node(p, NODE_JUMP);
+        p->nodes[bnc_node].data.timing.timing_op = TOK_BNC;
+        return bnc_node;
+    }
+    
+    // Expression statement
+    return parse_expression(p);
+}
+
+// Main parse function
+uint16_t parse_blaze_v2(Token* tokens, uint32_t count, ASTNode* node_pool, 
+                        uint32_t pool_size, char* string_pool, const char* source) {
+    Parser parser = {
+        .tokens = tokens,
+        .count = count,
+        .current = 0,
+        .nodes = node_pool,
+        .node_count = 0,
+        .node_capacity = pool_size,
+        .string_pool = string_pool,
+        .string_pos = 0,
+        .source = source,
+        .has_error = false,
+        .error_pos = 0
+    };
+    
+    // Create root program node
+    uint16_t program_node = alloc_node(&parser, NODE_PROGRAM);
+    if (program_node == 0xFFFF) return 0;
+    
+    // Parse all statements
+    uint16_t first_stmt = 0;
+    uint16_t last_stmt = 0;
+    
+    while (!at_end(&parser)) {
+        uint16_t stmt = parse_statement(&parser);
+        
+        if (parser.has_error || stmt == 0xFFFF) {
+            return 0xFFFF; // Parse failed
+        }
+        
+        if (first_stmt == 0 || first_stmt == 0xFFFF) {
+            first_stmt = stmt;
+            parser.nodes[program_node].data.binary.left_idx = first_stmt;
+        }
+        
+        // Chain statements
+        if (last_stmt != 0 && last_stmt < pool_size) {
+            parser.nodes[last_stmt].data.binary.right_idx = stmt;
+        }
+        last_stmt = stmt;
+    }
+    
+    return program_node;
+}

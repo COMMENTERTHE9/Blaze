@@ -449,6 +449,20 @@ static int get_precedence(TokenType type) {
         case TOK_NOT_EQUAL:     // *!=
             return 3;
             
+        // Bitwise operators (higher precedence than logical)
+        case TOK_BIT_LSHIFT:
+        case TOK_BIT_RSHIFT:
+            return 4;  // Same as comparison
+            
+        case TOK_BIT_AND:
+            return 3;  // Between comparison and logical
+            
+        case TOK_BIT_XOR:
+            return 3;
+            
+        case TOK_BIT_OR:
+            return 3;
+            
         // Logical AND
         case TOK_AND:
             return 2;
@@ -523,6 +537,16 @@ static uint16_t parse_expression_prec(Parser* p, int min_prec) {
         p->nodes[not_node].data.unary.op = TOK_BANG;
         p->nodes[not_node].data.unary.expr_idx = expr;
         left = not_node;
+    } else if (check(p, TOK_BIT_NOT)) {
+        advance(p);
+        // Parse bitwise NOT
+        uint16_t expr = parse_expression_prec(p, 10); // High precedence for unary
+        uint16_t not_node = alloc_node(p, NODE_UNARY_OP);
+        if (not_node == 0) return 0;
+        
+        p->nodes[not_node].data.unary.op = TOK_BIT_NOT;
+        p->nodes[not_node].data.unary.expr_idx = expr;
+        left = not_node;
     } else if (check(p, TOK_LT) || check(p, TOK_GT) || 
                check(p, TOK_TIMING_ONTO) || check(p, TOK_TIMING_INTO) || 
                check(p, TOK_TIMING_BOTH)) {
@@ -586,6 +610,16 @@ static uint16_t parse_expression_prec(Parser* p, int min_prec) {
             op_type = TOK_AND;
         } else if (check(p, TOK_OR)) {
             op_type = TOK_OR;
+        } else if (check(p, TOK_BIT_AND)) {
+            op_type = TOK_BIT_AND;
+        } else if (check(p, TOK_BIT_OR)) {
+            op_type = TOK_BIT_OR;
+        } else if (check(p, TOK_BIT_XOR)) {
+            op_type = TOK_BIT_XOR;
+        } else if (check(p, TOK_BIT_LSHIFT)) {
+            op_type = TOK_BIT_LSHIFT;
+        } else if (check(p, TOK_BIT_RSHIFT)) {
+            op_type = TOK_BIT_RSHIFT;
         } else if (check(p, TOK_BANG)) {
             // Handle logical NOT as unary operator
             // This should be handled in parse_primary, not here

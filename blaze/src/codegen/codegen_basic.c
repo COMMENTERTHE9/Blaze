@@ -103,16 +103,18 @@ extern void emit_dec_reg(CodeBuffer* buf, X64Register reg);
 
 // Generate code to print a number from register
 void generate_print_number(CodeBuffer* buf, X64Register num_reg) {
-    // Save registers we'll use
-    emit_push_reg(buf, RAX);
+    // Save all registers we'll use
     emit_push_reg(buf, RCX);
     emit_push_reg(buf, RDX);
     emit_push_reg(buf, RBX);
     emit_push_reg(buf, RSI);
     emit_push_reg(buf, RDI);
     
-    // Move number to RAX for division
-    emit_mov_reg_reg(buf, RAX, num_reg);
+    // Move value to RAX if it's not already there
+    if (num_reg != RAX) {
+        emit_push_reg(buf, RAX);
+        emit_mov_reg_reg(buf, RAX, num_reg);
+    }
     
     // Special case for 0
     emit_test_reg_reg(buf, RAX, RAX);
@@ -213,7 +215,11 @@ void generate_print_number(CodeBuffer* buf, X64Register num_reg) {
     emit_pop_reg(buf, RBX);
     emit_pop_reg(buf, RDX);
     emit_pop_reg(buf, RCX);
-    emit_pop_reg(buf, RAX);
+    
+    // Only restore RAX if we saved it
+    if (num_reg != RAX) {
+        emit_pop_reg(buf, RAX);
+    }
 }
 
 // Check if expression produces a float value
@@ -274,6 +280,14 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
             uint16_t left_idx = expr->data.binary.left_idx;
             uint16_t right_idx = expr->data.binary.right_idx;
             TokenType op = expr->data.binary.op;
+            
+            print_str("[BINARY] Processing binary op type=");
+            print_num(op);
+            print_str(" left=");
+            print_num(left_idx);
+            print_str(" right=");
+            print_num(right_idx);
+            print_str("\n");
             
             // Check if this is a float operation
             bool is_float = is_float_expression(nodes, expr_idx);
@@ -448,34 +462,56 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                     emit_mov_reg_reg(buf, RAX, RDX); // Move remainder to RAX
                     break;
                     
-                case TOK_EXPONENT:
+                case TOK_EXPONENT: {
                     // Exponentiation: base in RAX, exponent in RDX
-                    // Simple iterative implementation for integer powers
-                    // TODO: For production, use a more efficient algorithm
-                    emit_mov_reg_reg(buf, RCX, RAX); // Save base in RCX
-                    emit_mov_reg_imm64(buf, RAX, 1); // Result = 1
+                    // After binary op evaluation: left (base) in RAX, right (exponent) in RDX
                     
-                    // Loop: while RDX > 0
-                    uint32_t loop_start = buf->position;
+                    // Check for zero exponent first
                     emit_test_reg_reg(buf, RDX, RDX);
+                    uint32_t zero_exp_jump = buf->position;
+                    emit_jnz(buf, 0); // placeholder - will patch
                     
-                    // Calculate jump distance after the loop body
-                    // We need to jump over: MUL RCX (3 bytes) + DEC RDX (3 bytes) + JMP (2 bytes) = 8 bytes
-                    emit_jz(buf, 8); // Jump to end if exponent is 0
+                    // Exponent is 0, result is 1
+                    emit_mov_reg_imm64(buf, RAX, 1);
+                    uint32_t done_jump = buf->position;
+                    emit_byte(buf, 0xEB); // JMP to end
+                    emit_byte(buf, 0); // placeholder
+                    
+                    // Patch the zero check jump
+                    buf->code[zero_exp_jump + 1] = buf->position - zero_exp_jump - 2;
+                    
+                    // Non-zero exponent: do the loop
+                    // Save base in RCX for multiplication
+                    emit_mov_reg_reg(buf, RCX, RAX); // RCX = base
+                    
+                    // Need to save exponent somewhere else since MUL will overwrite RDX
+                    emit_mov_reg_reg(buf, RBX, RDX); // Move exponent to RBX
+                    
+                    emit_mov_reg_imm64(buf, RAX, 1); // RAX = 1 (result)
+                    
+                    // Loop: while RBX > 0
+                    uint32_t loop_start = buf->position;
+                    
+                    // Clear RDX for multiplication
+                    emit_xor_reg_reg(buf, RDX, RDX);
                     
                     // Result *= base
-                    emit_mul_reg(buf, RCX);
+                    emit_mul_reg(buf, RCX); // RDX:RAX = RAX * RCX
                     
                     // Exponent--
-                    emit_dec_reg(buf, RDX);
+                    emit_dec_reg(buf, RBX);
                     
-                    // Jump back to loop start
-                    int32_t jump_distance = loop_start - (buf->position + 2); // +2 for JMP instruction
-                    emit_byte(buf, 0xEB); // JMP rel8
-                    emit_byte(buf, (uint8_t)jump_distance);
+                    // Test if we should continue
+                    emit_test_reg_reg(buf, RBX, RBX);
+                    int8_t loop_offset = loop_start - (buf->position + 2);
+                    emit_jnz(buf, loop_offset); // Jump back if not zero
+                    
+                    // Patch the done jump
+                    buf->code[done_jump + 1] = buf->position - done_jump - 2;
                     
                     // Loop end - result is in RAX
                     break;
+                }
                     
                 // Comparison operators - set flags and use SETcc
                 case TOK_LT_CMP:
@@ -585,6 +621,48 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                     emit_byte(buf, 0x0F); // MOVZX RAX, AL
                     emit_byte(buf, 0xB6);
                     emit_byte(buf, 0xC0);
+                    break;
+                    
+                // Bitwise operators
+                case TOK_BIT_AND:
+                    // Bitwise AND: RAX & RDX
+                    emit_byte(buf, 0x48); // AND RAX, RDX
+                    emit_byte(buf, 0x21);
+                    emit_byte(buf, 0xD0);
+                    break;
+                    
+                case TOK_BIT_OR:
+                    // Bitwise OR: RAX | RDX
+                    emit_byte(buf, 0x48); // OR RAX, RDX
+                    emit_byte(buf, 0x09);
+                    emit_byte(buf, 0xD0);
+                    break;
+                    
+                case TOK_BIT_XOR:
+                    // Bitwise XOR: RAX ^ RDX
+                    emit_byte(buf, 0x48); // XOR RAX, RDX
+                    emit_byte(buf, 0x31);
+                    emit_byte(buf, 0xD0);
+                    break;
+                    
+                case TOK_BIT_LSHIFT:
+                    // Left shift: RAX << RDX
+                    // Move shift count to RCX
+                    emit_mov_reg_reg(buf, RCX, RDX);
+                    // SHL RAX, CL
+                    emit_byte(buf, 0x48);
+                    emit_byte(buf, 0xD3);
+                    emit_byte(buf, 0xE0);
+                    break;
+                    
+                case TOK_BIT_RSHIFT:
+                    // Right shift: RAX >> RDX
+                    // Move shift count to RCX
+                    emit_mov_reg_reg(buf, RCX, RDX);
+                    // SHR RAX, CL
+                    emit_byte(buf, 0x48);
+                    emit_byte(buf, 0xD3);
+                    emit_byte(buf, 0xE8);
                     break;
                     
                 default:
@@ -803,7 +881,8 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                     generate_print(buf, msg, 20);
                 }
             } else if (content_node->type == NODE_BINARY_OP || 
-                      content_node->type == NODE_IDENTIFIER) {
+                      content_node->type == NODE_IDENTIFIER ||
+                      content_node->type == NODE_UNARY_OP) {
                 // Check if this is a float expression
                 if (is_float_expression(nodes, content_idx)) {
                     // Generate the float expression in XMM0
@@ -814,141 +893,8 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                     // Generate expression and convert result to string
                     generate_expression(buf, nodes, content_idx, symbols, string_pool);
                     
-                    // RAX now contains the result
-                    // Convert to string and print using the same logic as NODE_NUMBER
-                char num_buf[32];
-                int64_t value = 0; // We need to extract from RAX at runtime
-                
-                // For now, use a simpler approach - store RAX and use number printing
-                // Save RAX value
-                emit_push_reg(buf, RAX);
-                
-                // Allocate buffer on stack
-                emit_sub_reg_imm32(buf, RSP, 32);
-                emit_mov_reg_reg(buf, RDI, RSP); // RDI = buffer pointer
-                emit_mov_reg_reg(buf, RSI, RAX); // RSI = number to convert
-                
-                // Generate runtime number printing
-                // Same logic as for NODE_NUMBER but value is in RAX
-                emit_push_reg(buf, RAX);
-                emit_push_reg(buf, RBX);
-                emit_push_reg(buf, RCX);
-                emit_push_reg(buf, RDX);
-                emit_push_reg(buf, RSI);
-                emit_push_reg(buf, RDI);
-                
-                // Move number to RBX
-                emit_mov_reg_reg(buf, RBX, RAX);
-                
-                // Check if zero
-                emit_cmp_reg_imm32(buf, RBX, 0);
-                uint32_t zero_jump = buf->position;
-                emit_jnz(buf, 0); // placeholder
-                
-                // Handle zero
-                emit_mov_reg_imm64(buf, RAX, '0');
-                emit_push_reg(buf, RAX);
-                emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-                emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-                emit_mov_reg_reg(buf, RSI, RSP);
-                emit_mov_reg_imm64(buf, RDX, 1);
-                emit_syscall(buf);
-                emit_add_reg_imm32(buf, RSP, 8);
-                uint32_t to_end_from_zero = buf->position;
-                emit_jmp_rel32(buf, 0); // placeholder
-                
-                // Patch zero jump
-                uint8_t* patch_zero = &buf->code[zero_jump + 1];
-                *patch_zero = buf->position - zero_jump - 2;
-                
-                // Check if negative
-                emit_cmp_reg_imm32(buf, RBX, 0);
-                uint32_t positive_jump = buf->position;
-                emit_jge_rel32(buf, 0); // placeholder
-                
-                // Handle negative - print minus sign
-                emit_neg_reg(buf, RBX);
-                emit_mov_reg_imm64(buf, RAX, '-');
-                emit_push_reg(buf, RAX);
-                emit_mov_reg_imm64(buf, RAX, 1);
-                emit_mov_reg_imm64(buf, RDI, 1);
-                emit_mov_reg_reg(buf, RSI, RSP);
-                emit_mov_reg_imm64(buf, RDX, 1);
-                emit_syscall(buf);
-                emit_add_reg_imm32(buf, RSP, 8);
-                
-                // Patch positive jump
-                uint32_t* patch_positive = (uint32_t*)&buf->code[positive_jump + 2];
-                *patch_positive = buf->position - positive_jump - 6;
-                
-                // Convert digits - push them on stack
-                emit_mov_reg_imm64(buf, RCX, 0); // digit count
-                
-                // digit_loop:
-                uint32_t digit_loop_start = buf->position;
-                emit_mov_reg_reg(buf, RAX, RBX);
-                emit_mov_reg_imm64(buf, RDX, 0);
-                emit_mov_reg_imm64(buf, RSI, 10);
-                emit_div_reg(buf, RSI); // RAX = quotient, RDX = remainder
-                emit_mov_reg_reg(buf, RBX, RAX); // RBX = quotient
-                emit_add_reg_imm32(buf, RDX, '0'); // Convert to ASCII
-                emit_push_reg(buf, RDX); // Push digit
-                emit_inc_reg(buf, RCX); // count++
-                emit_cmp_reg_imm32(buf, RBX, 0);
-                int8_t loop_offset = digit_loop_start - (buf->position + 2);
-                emit_byte(buf, 0x75); // jnz
-                emit_byte(buf, loop_offset);
-                
-                // Pop and print digits
-                emit_mov_reg_reg(buf, RBX, RCX); // RBX = count
-                
-                // print_loop:
-                uint32_t print_loop_start = buf->position;
-                emit_cmp_reg_imm32(buf, RBX, 0);
-                uint32_t print_done_jump = buf->position;
-                emit_jz(buf, 0); // placeholder
-                
-                // Print one digit
-                emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-                emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-                emit_mov_reg_reg(buf, RSI, RSP);  // current digit on stack
-                emit_mov_reg_imm64(buf, RDX, 1);  // length 1
-                emit_syscall(buf);
-                
-                emit_add_reg_imm32(buf, RSP, 8); // remove printed digit
-                emit_sub_reg_imm32(buf, RBX, 1); // decrement count
-                
-                // Jump back to print loop
-                int8_t print_loop_offset = print_loop_start - (buf->position + 2);
-                emit_byte(buf, 0xEB); // jmp short
-                emit_byte(buf, print_loop_offset);
-                
-                // Patch print done jump
-                uint8_t* patch_print_done = &buf->code[print_done_jump + 1];
-                *patch_print_done = buf->position - print_done_jump - 2;
-                
-                // Patch jump from zero case
-                uint32_t* patch_zero_end = (uint32_t*)&buf->code[to_end_from_zero + 1];
-                *patch_zero_end = buf->position - to_end_from_zero - 5;
-                
-                // Print newline
-                emit_sub_reg_imm32(buf, RSP, 8);
-                emit_mov_reg_imm64(buf, RAX, '\n');
-                emit_mov_mem_reg(buf, RSP, 0, RAX);  // Store newline at [RSP]
-                emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-                emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-                emit_mov_reg_reg(buf, RSI, RSP);  // address of newline
-                emit_mov_reg_imm64(buf, RDX, 1);  // length 1
-                emit_syscall(buf);
-                emit_add_reg_imm32(buf, RSP, 8); // Clean up stack
-                
-                // Restore registers
-                emit_pop_reg(buf, RDI);
-                emit_pop_reg(buf, RSI);
-                emit_pop_reg(buf, RDX);
-                emit_pop_reg(buf, RCX);
-                emit_pop_reg(buf, RBX);
-                emit_pop_reg(buf, RAX);
+                    // RAX now contains the result - use the simpler print number function
+                    generate_print_number(buf, RAX);
                 }
             } else {
                 // Unsupported content type - print debug info

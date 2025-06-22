@@ -1,0 +1,6 @@
+print/ 12 &&. 10\
+print/ 12 ||. 10\
+print/ 12 ^^ 10\
+print/ (~~15)\
+print/ 1 <<< 3\
+print/ 16 >>> 2\
