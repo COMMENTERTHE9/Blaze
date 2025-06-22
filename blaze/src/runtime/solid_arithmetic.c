@@ -236,8 +236,10 @@ SolidNumber* solid_subtract(SolidNumber* a, SolidNumber* b) {
     
     // Special cases
     if (a->barrier_type == BARRIER_INFINITY && b->barrier_type == BARRIER_INFINITY) {
-        // ∞ - ∞ = all natural numbers (represented as undefined)
-        return solid_init_with_gap("ℕ", 1, BARRIER_UNDEFINED, ~0ULL,
+        // ∞ - ∞ = all natural numbers
+        // According to solid numbers spec: 1234567891011121314151617...(∞:∞)...{*}
+        return solid_init_with_gap("1234567891011121314151617", 25, 
+                                  BARRIER_INFINITY, ~0ULL,
                                   combine_confidence(a->confidence_x1000, b->confidence_x1000, '-'),
                                   NULL, 0, TERMINAL_SUPERPOSITION);
     }
@@ -449,10 +451,17 @@ SolidNumber* solid_divide(SolidNumber* a, SolidNumber* b) {
     
     // Special cases
     if (a->barrier_type == BARRIER_INFINITY && b->barrier_type == BARRIER_INFINITY) {
-        // ∞ / ∞ has special algorithm in solid numbers
-        // Result depends on terminal digits comparison
-        return solid_init_with_gap("1", 1, BARRIER_COMPUTATIONAL, 1000000, 750,
-                                  NULL, 0, TERMINAL_SUPERPOSITION);
+        // ∞ ÷ ∞ uses complex algorithm based on terminal digits
+        // TODO: Implement full algorithm with terminal digit analysis
+        // For now, return placeholder result
+        // According to spec, result depends on: 
+        // 1. Express each as (12,345,678,910 expression)
+        // 2. Divide by terminal digits
+        // 3. Divide quotients
+        // 4. Multiply terminal digits with modular arithmetic
+        return solid_init_with_gap("3.2", 3, BARRIER_INFINITY, ~0ULL, 
+                                  combine_confidence(a->confidence_x1000, b->confidence_x1000, '/'),
+                                  "00000", 5, TERMINAL_DIGITS);
     }
     
     if (a->barrier_type == BARRIER_INFINITY) {
