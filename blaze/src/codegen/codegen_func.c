@@ -177,6 +177,12 @@ void generate_func_def(CodeBuffer* buf, ASTNode* nodes, uint16_t func_idx,
     // Function generation complete
 }
 
+// Forward declaration for math function support
+extern bool is_math_function(const char* name, uint16_t len);
+extern void generate_math_function(CodeBuffer* buf, const char* func_name, uint16_t name_len,
+                                  ASTNode* nodes, uint16_t arg_idx,
+                                  SymbolTable* symbols, char* string_pool);
+
 // Generate code for function call
 void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_idx,
                        SymbolTable* symbols, char* string_pool) {
@@ -207,6 +213,17 @@ void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_idx,
     }
     
     const char* func_name = &string_pool[name_node->data.ident.name_offset];
+    uint16_t name_len = name_node->data.ident.name_len;
+    
+    // Check if this is a math function
+    if (is_math_function(func_name, name_len)) {
+        // Handle math functions specially
+        // The argument is in right_idx
+        uint16_t arg_idx = call_node->data.binary.right_idx;
+        generate_math_function(buf, func_name, name_len, nodes, arg_idx, symbols, string_pool);
+        return;
+    }
+    
     // Calling function
     
     // Look up function

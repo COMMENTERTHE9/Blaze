@@ -298,6 +298,64 @@ static uint16_t parse_primary(Parser* p) {
         return parse_number(p);
     }
     
+    // Math functions: math.sin(x), math.cos(x), etc.
+    if (check(p, TOK_MATH_PREFIX)) {
+        advance(p); // consume "math."
+        
+        // Next should be function name
+        if (!check(p, TOK_IDENTIFIER)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        Token* func_name = advance(p);
+        
+        // Next should be opening parenthesis
+        if (!match(p, TOK_LPAREN)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        // Parse the argument
+        uint16_t arg = parse_expression(p);
+        
+        // Closing parenthesis
+        if (!match(p, TOK_RPAREN)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        // Create a function call node
+        uint16_t call_node = alloc_node(p, NODE_FUNC_CALL);
+        if (call_node == 0) return 0;
+        
+        // Store function name in string pool
+        uint32_t name_offset = p->string_pos;
+        if (p->string_pos + func_name->len + 1 > 4096) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        for (uint32_t i = 0; i < func_name->len; i++) {
+            p->string_pool[p->string_pos++] = p->source[func_name->start + i];
+        }
+        p->string_pool[p->string_pos++] = '\0';
+        
+        // Create identifier node for function name
+        uint16_t name_node = alloc_node(p, NODE_IDENTIFIER);
+        if (name_node == 0) return 0;
+        
+        p->nodes[name_node].data.ident.name_offset = name_offset;
+        p->nodes[name_node].data.ident.name_len = func_name->len;
+        // Math function is identified by being in a NODE_FUNC_CALL with math. prefix
+        
+        // Store function name in left, argument in right
+        p->nodes[call_node].data.binary.left_idx = name_node;
+        p->nodes[call_node].data.binary.right_idx = arg;
+        
+        return call_node;
+    }
+    
     // Identifiers and array access
     if (check(p, TOK_IDENTIFIER)) {
         uint16_t id_node = parse_identifier(p);
@@ -1597,8 +1655,8 @@ static uint16_t parse_statement(Parser* p) {
             
             p->nodes[output_node].data.output.content_idx = id_node;
         } else if (check(p, TOK_NUMBER) || check(p, TOK_MINUS) || 
-                   check(p, TOK_LPAREN)) {
-            // Parse expression (could be number, arithmetic, etc.)
+                   check(p, TOK_LPAREN) || check(p, TOK_MATH_PREFIX)) {
+            // Parse expression (could be number, arithmetic, math function, etc.)
             uint16_t expr_node = parse_expression(p);
             p->nodes[output_node].data.output.content_idx = expr_node;
         } else if (check(p, TOK_STRING)) {

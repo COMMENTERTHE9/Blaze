@@ -737,7 +737,14 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
         return;
     }
     
-    // Debug output disabled
+    // Debug output
+    print_str("[OUTPUT] node_idx=");
+    print_num(node_idx);
+    print_str(" output_type=");
+    print_num(node->data.output.output_type);
+    print_str(" content_idx=");
+    print_num(node->data.output.content_idx);
+    print_str("\n");
     
     if (node->data.output.output_type == TOK_PRINT) {
         // Get content index
@@ -882,19 +889,28 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                 }
             } else if (content_node->type == NODE_BINARY_OP || 
                       content_node->type == NODE_IDENTIFIER ||
-                      content_node->type == NODE_UNARY_OP) {
-                // Check if this is a float expression
-                if (is_float_expression(nodes, content_idx)) {
-                    // Generate the float expression in XMM0
-                    generate_expression(buf, nodes, content_idx, symbols, string_pool);
-                    // Print the float from XMM0
-                    generate_print_float(buf);
-                } else {
-                    // Generate expression and convert result to string
-                    generate_expression(buf, nodes, content_idx, symbols, string_pool);
-                    
-                    // RAX now contains the result - use the simpler print number function
+                      content_node->type == NODE_UNARY_OP ||
+                      content_node->type == NODE_FUNC_CALL) {
+                // For function calls, we need to generate the call first
+                if (content_node->type == NODE_FUNC_CALL) {
+                    generate_func_call(buf, nodes, content_idx, symbols, string_pool);
+                    // Result is in RAX (integer) or XMM0 (float)
+                    // For now, assume integer result - we'll improve this later
                     generate_print_number(buf, RAX);
+                } else {
+                    // Check if this is a float expression
+                    if (is_float_expression(nodes, content_idx)) {
+                        // Generate the float expression in XMM0
+                        generate_expression(buf, nodes, content_idx, symbols, string_pool);
+                        // Print the float from XMM0
+                        generate_print_float(buf);
+                    } else {
+                        // Generate expression and convert result to string
+                        generate_expression(buf, nodes, content_idx, symbols, string_pool);
+                        
+                        // RAX now contains the result - use the simpler print number function
+                        generate_print_number(buf, RAX);
+                    }
                 }
             } else {
                 // Unsupported content type - print debug info
