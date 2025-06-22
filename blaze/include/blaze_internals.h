@@ -148,6 +148,17 @@ typedef enum {
     
     // Conditional abbreviations
     TOK_COND_ENS,        // f.ens or fucn.ens
+    
+    // Solid number tokens
+    TOK_SOLID_ELLIPSIS,  // ...
+    TOK_SOLID_LPAREN,    // ( after ...
+    TOK_SOLID_RPAREN,    // ) before ...
+    TOK_SOLID_BARRIER,   // q, e, s, t, c, ∞, u
+    TOK_SOLID_EXACT,     // exact
+    TOK_SOLID_TERMINAL,  // terminal digits/symbols
+    TOK_SOLID_PIPE,      // | in confidence
+    TOK_SOLID_COLON,     // : in barrier spec
+    TOK_SOLID_NUMBER,    // Complete solid number token
     TOK_COND_VER,        // f.ver or fucn.ver
     TOK_COND_CHK,        // f.chk or fucn.chk
     TOK_COND_TRY,        // f.try or fucn.try

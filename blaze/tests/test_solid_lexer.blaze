@@ -1,0 +1,24 @@
+## Test file for solid number lexer
+
+## Basic solid number
+solid.pi = 3.14159...(q:10^35|0.85)...787
+
+## Exact number
+solid.half = 0.5...(exact)...000
+
+## Infinity
+solid.inf = ...(inf:inf|1.0)...{*}
+
+## With different barriers
+solid.e = 2.71828...(e:10^50|0.92)...123
+solid.data = 42.0...(s:10^82|0.79)...456
+
+## Without confidence
+solid.simple = 1.414...(c:10^20)...589
+
+## With undefined terminal
+solid.undef = 99.9...(u:10^15|0.0)...null
+
+## ASCII alternatives
+solid.inf2 = ...(inf:inf|1.0)...{*}
+solid.empty = 7.5...(t:10^12|0.5)...null

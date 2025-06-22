@@ -25,6 +25,7 @@ const char* token_type_name(TokenType type) {
         case TOK_PLUS: return "TOK_PLUS";
         case TOK_MINUS: return "TOK_MINUS";
         case TOK_STAR: return "TOK_STAR";
+        case TOK_SOLID_NUMBER: return "TOK_SOLID_NUMBER";
         default: return "UNKNOWN";
     }
 }
@@ -562,6 +563,11 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
         }
         else if (ch_type == CHAR_DIGIT || (ch == '0' && pos + 1 < len && (input[pos + 1] == 'x' || input[pos + 1] == 'X'))) {
             // Number (decimal, hex, float, long)
+            print_str("[LEXER] Starting number parse at pos ");
+            print_num(pos);
+            print_str(" char='");
+            print_num(ch);
+            print_str("'\n");
             tok->type = TOK_NUMBER;
             
             // Check for hex number
@@ -578,16 +584,133 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     pos++;
                 }
                 
-                // Fractional part
+                // Fractional part - but check for "..." pattern first
                 if (pos < len && input[pos] == '.') {
-                    pos++;
-                    while (pos < len && char_types[(unsigned char)input[pos]] == CHAR_DIGIT) {
+                    // Look ahead to see if this is "..." (solid number)
+                    if (pos + 2 < len && input[pos + 1] == '.' && input[pos + 2] == '.') {
+                        // Don't consume the dots - this is a solid number
+                    } else {
+                        // Regular decimal point
                         pos++;
+                        while (pos < len && char_types[(unsigned char)input[pos]] == CHAR_DIGIT) {
+                            pos++;
+                        }
                     }
                 }
                 
-                // Scientific notation
-                if (pos < len && (input[pos] == 'e' || input[pos] == 'E')) {
+                // Check for solid number: "..."
+                if (pos + 2 < len && input[pos] == '.' && input[pos + 1] == '.' && input[pos + 2] == '.') {
+                    // This is a solid number!
+                    print_str("[LEXER] Found solid number pattern at pos ");
+                    print_num(pos);
+                    print_str("\n");
+                    tok->type = TOK_SOLID_NUMBER;
+                    pos += 3; // Skip "..."
+                    
+                    // Expect '(' for barrier spec
+                    if (pos < len && input[pos] == '(') {
+                        pos++;
+                        
+                        // Check for "exact"
+                        if (pos + 5 <= len && str_equals(&input[pos], "exact", 5)) {
+                            pos += 5;
+                        } else {
+                            // Parse barrier type (q, e, s, t, c, ∞, u)
+                            if (pos < len && (input[pos] == 'q' || input[pos] == 'e' || 
+                                            input[pos] == 's' || input[pos] == 't' || 
+                                            input[pos] == 'c' || input[pos] == 'u')) {
+                                pos++;
+                            } else if (pos + 2 < len && input[pos] == '\xE2' && 
+                                     input[pos + 1] == '\x88' && input[pos + 2] == '\x9E') {
+                                // UTF-8 infinity symbol (∞)
+                                pos += 3;
+                            } else if (pos + 3 <= len && str_equals(&input[pos], "inf", 3)) {
+                                // ASCII alternative for infinity
+                                pos += 3;
+                            }
+                            
+                            // Expect ':'
+                            if (pos < len && input[pos] == ':') {
+                                pos++;
+                                
+                                // Parse gap magnitude (10^n or ∞)
+                                if (pos + 2 < len && input[pos] == '1' && input[pos + 1] == '0') {
+                                    pos += 2;
+                                    if (pos < len && input[pos] == '^') {
+                                        pos++;
+                                        // Parse exponent
+                                        while (pos < len && char_types[(unsigned char)input[pos]] == CHAR_DIGIT) {
+                                            pos++;
+                                        }
+                                    } else {
+                                        // Could be superscript digits
+                                        while (pos < len && ((unsigned char)input[pos] >= 0xE2 && 
+                                                           (unsigned char)input[pos] <= 0xE2)) {
+                                            pos++;
+                                        }
+                                    }
+                                } else if (pos + 2 < len && input[pos] == '\xE2' && 
+                                         input[pos + 1] == '\x88' && input[pos + 2] == '\x9E') {
+                                    // UTF-8 infinity
+                                    pos += 3;
+                                } else if (pos + 3 <= len && str_equals(&input[pos], "inf", 3)) {
+                                    // ASCII infinity
+                                    pos += 3;
+                                }
+                                
+                                // Optional confidence: |0.85
+                                if (pos < len && input[pos] == '|') {
+                                    pos++;
+                                    // Parse confidence number
+                                    while (pos < len && (char_types[(unsigned char)input[pos]] == CHAR_DIGIT ||
+                                                       input[pos] == '.')) {
+                                        pos++;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Expect ')'
+                        if (pos < len && input[pos] == ')') {
+                            pos++;
+                        }
+                    }
+                    
+                    // Expect second "..."
+                    if (pos + 2 < len && input[pos] == '.' && input[pos + 1] == '.' && input[pos + 2] == '.') {
+                        pos += 3;
+                        
+                        // Parse terminal digits or special symbols
+                        if (pos < len) {
+                            if (input[pos] == '{' && pos + 2 < len && input[pos + 1] == '*' && input[pos + 2] == '}') {
+                                // Superposition {*}
+                                pos += 3;
+                            } else if (pos + 2 < len && input[pos] == '\xE2' && 
+                                     input[pos + 1] == '\x88' && input[pos + 2] == '\x85') {
+                                // UTF-8 empty set (∅)
+                                pos += 3;
+                            } else if (pos + 4 <= len && str_equals(&input[pos], "null", 4)) {
+                                // ASCII alternative for empty set
+                                pos += 4;
+                            } else {
+                                // Regular terminal digits
+                                while (pos < len && char_types[(unsigned char)input[pos]] == CHAR_DIGIT) {
+                                    pos++;
+                                }
+                            }
+                        }
+                    }
+                    
+                    tok->len = pos - tok->start;
+                    print_str("[LEXER] Solid number complete, len=");
+                    print_num(tok->len);
+                    print_str(" next pos=");
+                    print_num(pos);
+                    print_str("\n");
+                    // Skip remaining number parsing for solid numbers
+                } else {
+                    // Scientific notation - only for regular numbers
+                    if (pos < len && (input[pos] == 'e' || input[pos] == 'E')) {
                     pos++;
                     if (pos < len && (input[pos] == '+' || input[pos] == '-')) {
                         pos++;
@@ -595,15 +718,19 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     while (pos < len && char_types[(unsigned char)input[pos]] == CHAR_DIGIT) {
                         pos++;
                     }
+                    }
+                    
+                    // Long suffix - only for regular numbers
+                    if (pos < len && (input[pos] == 'L' || input[pos] == 'l')) {
+                        pos++;
+                    }
                 }
             }
             
-            // Long suffix
-            if (pos < len && (input[pos] == 'L' || input[pos] == 'l')) {
-                pos++;
+            // Set token length if not already set
+            if (tok->type != TOK_SOLID_NUMBER) {
+                tok->len = pos - tok->start;
             }
-            
-            tok->len = pos - tok->start;
         }
         else if (ch == '"') {
             // String
@@ -839,6 +966,102 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                         tok->type = TOK_ERROR;
                         tok->len = 1;
                         pos++;
+                    }
+                    break;
+                case '.': 
+                    // Check for "..." (could be solid number without known digits, e.g., infinity)
+                    if (pos + 2 < len && input[pos + 1] == '.' && input[pos + 2] == '.') {
+                        // This could be infinity: ...(∞:∞)...{*}
+                        uint32_t save_pos = pos;
+                        pos += 3; // Skip "..."
+                        
+                        // Check if followed by '('
+                        if (pos < len && input[pos] == '(') {
+                            // This is a solid number starting with ...
+                            tok->type = TOK_SOLID_NUMBER;
+                            tok->start = save_pos;
+                            pos++;
+                            
+                            // Parse barrier spec (same logic as in number parsing)
+                            if (pos + 5 <= len && str_equals(&input[pos], "exact", 5)) {
+                                pos += 5;
+                            } else {
+                                // Parse barrier type
+                                if (pos < len && (input[pos] == 'q' || input[pos] == 'e' || 
+                                                input[pos] == 's' || input[pos] == 't' || 
+                                                input[pos] == 'c' || input[pos] == 'u')) {
+                                    pos++;
+                                } else if (pos + 2 < len && input[pos] == '\xE2' && 
+                                         input[pos + 1] == '\x88' && input[pos + 2] == '\x9E') {
+                                    pos += 3;
+                                } else if (pos + 3 <= len && str_equals(&input[pos], "inf", 3)) {
+                                    pos += 3;
+                                }
+                                
+                                if (pos < len && input[pos] == ':') {
+                                    pos++;
+                                    // Parse gap magnitude
+                                    if (pos + 2 < len && input[pos] == '1' && input[pos + 1] == '0') {
+                                        pos += 2;
+                                        if (pos < len && input[pos] == '^') {
+                                            pos++;
+                                            while (pos < len && char_types[(unsigned char)input[pos]] == CHAR_DIGIT) {
+                                                pos++;
+                                            }
+                                        }
+                                    } else if (pos + 2 < len && input[pos] == '\xE2' && 
+                                             input[pos + 1] == '\x88' && input[pos + 2] == '\x9E') {
+                                        pos += 3;
+                                    } else if (pos + 3 <= len && str_equals(&input[pos], "inf", 3)) {
+                                        pos += 3;
+                                    }
+                                    
+                                    if (pos < len && input[pos] == '|') {
+                                        pos++;
+                                        while (pos < len && (char_types[(unsigned char)input[pos]] == CHAR_DIGIT ||
+                                                           input[pos] == '.')) {
+                                            pos++;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (pos < len && input[pos] == ')') {
+                                pos++;
+                            }
+                            
+                            // Expect second "..."
+                            if (pos + 2 < len && input[pos] == '.' && input[pos + 1] == '.' && input[pos + 2] == '.') {
+                                pos += 3;
+                                
+                                // Parse terminal
+                                if (pos < len) {
+                                    if (input[pos] == '{' && pos + 2 < len && input[pos + 1] == '*' && input[pos + 2] == '}') {
+                                        pos += 3;
+                                    } else if (pos + 2 < len && input[pos] == '\xE2' && 
+                                             input[pos + 1] == '\x88' && input[pos + 2] == '\x85') {
+                                        pos += 3;
+                                    } else if (pos + 4 <= len && str_equals(&input[pos], "null", 4)) {
+                                        pos += 4;
+                                    } else {
+                                        while (pos < len && char_types[(unsigned char)input[pos]] == CHAR_DIGIT) {
+                                            pos++;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            tok->len = pos - tok->start;
+                        } else {
+                            // Just a single dot
+                            tok->type = TOK_DOT;
+                            tok->len = 1;
+                            pos = save_pos + 1;
+                        }
+                    } else {
+                        tok->type = TOK_DOT; 
+                        tok->len = 1; 
+                        pos++; 
                     }
                     break;
                 default: 
