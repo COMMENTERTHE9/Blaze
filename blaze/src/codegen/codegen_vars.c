@@ -26,6 +26,7 @@ extern void emit_movsd_mem_xmm(CodeBuffer* buf, X64Register base, SSERegister sr
 extern void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                                SymbolTable* symbols, char* string_pool);
 extern bool is_float_expression_impl(ASTNode* nodes, uint16_t expr_idx, char* string_pool);
+extern bool is_solid_expression_impl(ASTNode* nodes, uint16_t expr_idx, char* string_pool);
 
 // Variable storage area
 // We'll use a simple approach: allocate space on the stack for variables
@@ -46,6 +47,7 @@ typedef struct {
 #define VAR_TYPE_FLOAT  1
 #define VAR_TYPE_STRING 2
 #define VAR_TYPE_BOOL   3
+#define VAR_TYPE_SOLID  4
 
 // Global variable table (should be per-function in the future)
 static VarEntry var_table[MAX_VARS];
@@ -327,6 +329,8 @@ void generate_var_def_new(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
             var_type = 's';
         } else if (init_node->type == NODE_NUMBER) {
             var_type = 'i';
+        } else if (init_node->type == NODE_SOLID) {
+            var_type = 'd';  // 'd' for solid (can't use 's' - already used for string)
         }
     }
     
@@ -429,6 +433,19 @@ void generate_var_def_new(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
             generate_expression(buf, nodes, init_idx, symbols, string_pool);
             // Store float from XMM0
             generate_var_store_float(buf, var_name);
+        } else if (init_node->type == NODE_SOLID) {
+            print_str("[VAR] Processing NODE_SOLID with var_name='");
+            print_str(var_name);
+            print_str("'\n");
+            // Create solid variable
+            VarEntry* var = get_or_create_var_typed(var_name, VAR_TYPE_SOLID);
+            print_str("[VAR] Created solid variable, type=");
+            print_num(var ? var->var_type : -1);
+            print_str("\n");
+            // For now, store the node index as a placeholder
+            // TODO: Implement proper solid number storage and runtime representation
+            emit_mov_reg_imm64(buf, RAX, init_idx);
+            generate_var_store(buf, var_name, RAX);
         } else if (init_node->type == NODE_STRING) {
             // Create string variable
             VarEntry* var = get_or_create_var_typed(var_name, VAR_TYPE_STRING);
@@ -440,16 +457,26 @@ void generate_var_def_new(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
             // Handle any other expression (like binary operations)
             print_str("[VAR] Initializing with expression\n");
             
-            // Check if the expression result is a float
+            // Check if the expression result is a float or solid
             bool is_float_expr = is_float_expression_impl(nodes, init_idx, string_pool);
+            bool is_solid_expr = is_solid_expression_impl(nodes, init_idx, string_pool);
             
             print_str("[VAR] Expression is_float=");
             print_num(is_float_expr);
+            print_str(" is_solid=");
+            print_num(is_solid_expr);
             print_str("\n");
             
             // Create variable based on expression type (overrides var_type if needed)
             VarEntry* var = NULL;
-            if (is_float_expr || var_type == 'f') {
+            if (is_solid_expr || var_type == 'd') {
+                print_str("[VAR] Creating SOLID variable due to is_solid_expr=");
+                print_num(is_solid_expr);
+                print_str(" or var_type=");
+                print_num(var_type);
+                print_str("\n");
+                var = get_or_create_var_typed(var_name, VAR_TYPE_SOLID);
+            } else if (is_float_expr || var_type == 'f') {
                 print_str("[VAR] Creating FLOAT variable due to is_float_expr=");
                 print_num(is_float_expr);
                 print_str(" or var_type=");
@@ -518,4 +545,10 @@ void reset_var_table(void) {
 bool is_var_float(const char* name) {
     VarEntry* var = get_or_create_var(name);
     return var && var->var_type == VAR_TYPE_FLOAT;
+}
+
+// Check if variable is a solid number
+bool is_var_solid(const char* name) {
+    VarEntry* var = get_or_create_var(name);
+    return var && var->var_type == VAR_TYPE_SOLID;
 }

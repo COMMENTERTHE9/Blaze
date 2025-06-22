@@ -314,6 +314,59 @@ bool is_float_expression(ASTNode* nodes, uint16_t expr_idx) {
     return is_float_expression_impl(nodes, expr_idx, NULL);
 }
 
+// Check if expression is a solid number
+bool is_solid_expression_impl(ASTNode* nodes, uint16_t expr_idx, char* string_pool) {
+    if (expr_idx == 0 || expr_idx >= 4096) return false;
+    
+    ASTNode* expr = &nodes[expr_idx];
+    
+    switch (expr->type) {
+        case NODE_SOLID:
+            return true;
+            
+        case NODE_EXPRESSION:
+            // Check the inner expression
+            if (expr->data.binary.left_idx > 0 && expr->data.binary.left_idx < 4096) {
+                return is_solid_expression_impl(nodes, expr->data.binary.left_idx, string_pool);
+            }
+            return false;
+            
+        case NODE_BINARY_OP: {
+            // If either operand is solid, the result is solid
+            uint16_t left_idx = expr->data.binary.left_idx;
+            uint16_t right_idx = expr->data.binary.right_idx;
+            return is_solid_expression_impl(nodes, left_idx, string_pool) || 
+                   is_solid_expression_impl(nodes, right_idx, string_pool);
+        }
+        
+        case NODE_IDENTIFIER: {
+            // Check if variable is a solid number
+            if (!string_pool) return false;
+            
+            char var_name[256];
+            uint32_t name_len = expr->data.ident.name_len;
+            if (name_len >= 256) name_len = 255;
+            
+            // Extract variable name
+            for (uint32_t i = 0; i < name_len; i++) {
+                var_name[i] = string_pool[expr->data.ident.name_offset + i];
+            }
+            var_name[name_len] = '\0';
+            
+            // Check if variable is a solid number
+            return is_var_solid(var_name);
+        }
+        
+        default:
+            return false;
+    }
+}
+
+// Wrapper for solid expression check
+bool is_solid_expression(ASTNode* nodes, uint16_t expr_idx) {
+    return is_solid_expression_impl(nodes, expr_idx, NULL);
+}
+
 // Generate code for expression evaluation
 // Result is left in RAX for integers or XMM0 for floats
 void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,

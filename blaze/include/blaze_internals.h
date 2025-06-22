@@ -655,4 +655,8 @@ void memory_test(void);
 // Debug functions
 void debug_print_tokens(Token* tokens, uint32_t count, const char* source);
 
+// Variable type checking functions
+bool is_var_float(const char* name);
+bool is_var_solid(const char* name);
+
 #endif // BLAZE_INTERNALS_H
