@@ -54,6 +54,21 @@ extern void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_id
 extern void generate_print_float(CodeBuffer* buf);
 extern void generate_print_float_safe(CodeBuffer* buf);
 
+// Variable type definitions from codegen_vars.c
+#define VAR_TYPE_INT    0
+#define VAR_TYPE_FLOAT  1
+#define VAR_TYPE_STRING 2
+#define VAR_TYPE_BOOL   3
+
+typedef struct {
+    uint32_t name_hash;
+    int32_t stack_offset;
+    bool is_initialized;
+    uint8_t var_type;
+} VarEntry;
+
+extern VarEntry* get_or_create_var(const char* name);
+
 // Generate code for variable definition
 void generate_var_def(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx, 
                       SymbolTable* symbols, char* string_pool) {
@@ -222,27 +237,81 @@ void generate_print_number(CodeBuffer* buf, X64Register num_reg) {
     }
 }
 
+// Variable type definitions (matching codegen_vars.c)
+#define VAR_TYPE_FLOAT  1
+
+// Forward declarations for variable functions
+extern bool is_var_float(const char* name);
+
 // Check if expression produces a float value
-static bool is_float_expression(ASTNode* nodes, uint16_t expr_idx) {
+bool is_float_expression_impl(ASTNode* nodes, uint16_t expr_idx, char* string_pool) {
     if (expr_idx == 0 || expr_idx >= 4096) return false;
     
     ASTNode* expr = &nodes[expr_idx];
+    
+    print_str("[FLOAT_CHECK] Checking node ");
+    print_num(expr_idx);
+    print_str(" type=");
+    print_num(expr->type);
+    print_str("\n");
     
     switch (expr->type) {
         case NODE_FLOAT:
             return true;
             
+        case NODE_EXPRESSION:
+            // Expression nodes use binary structure
+            // Check the left side (the actual expression)
+            if (expr->data.binary.left_idx > 0 && expr->data.binary.left_idx < 4096) {
+                return is_float_expression_impl(nodes, expr->data.binary.left_idx, string_pool);
+            }
+            return false;
+            
         case NODE_BINARY_OP: {
             // If either operand is float, the result is float
             uint16_t left_idx = expr->data.binary.left_idx;
             uint16_t right_idx = expr->data.binary.right_idx;
-            return is_float_expression(nodes, left_idx) || 
-                   is_float_expression(nodes, right_idx);
+            return is_float_expression_impl(nodes, left_idx, string_pool) || 
+                   is_float_expression_impl(nodes, right_idx, string_pool);
+        }
+        
+        case NODE_IDENTIFIER: {
+            // Check if variable is a float
+            if (!string_pool) {
+                print_str("[FLOAT_CHECK] No string_pool, can't check identifier\n");
+                return false;
+            }
+            
+            char var_name[256];
+            uint32_t name_len = expr->data.ident.name_len;
+            if (name_len >= 256) name_len = 255;
+            
+            // Extract variable name
+            for (uint32_t i = 0; i < name_len; i++) {
+                var_name[i] = string_pool[expr->data.ident.name_offset + i];
+            }
+            var_name[name_len] = '\0';
+            
+            // Check if variable is a float
+            bool is_float = is_var_float(var_name);
+            
+            print_str("[FLOAT_CHECK] Variable '");
+            print_str(var_name);
+            print_str("' is_float=");
+            print_num(is_float);
+            print_str("\n");
+            
+            return is_float;
         }
         
         default:
             return false;
     }
+}
+
+// Wrapper for backwards compatibility
+bool is_float_expression(ASTNode* nodes, uint16_t expr_idx) {
+    return is_float_expression_impl(nodes, expr_idx, NULL);
 }
 
 // Generate code for expression evaluation
@@ -264,6 +333,12 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
         case NODE_FLOAT: {
             // Load immediate float value into XMM0
             double value = expr->data.float_value;
+            print_str("[EXPR] Loading float value ");
+            // Print integer part for debugging
+            print_num((int)value);
+            print_str(".");
+            print_num((int)((value - (int)value) * 100));
+            print_str(" into XMM0\n");
             emit_movsd_xmm_imm(buf, XMM0, value);
             break;
         }
@@ -290,12 +365,23 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
             print_str("\n");
             
             // Check if this is a float operation
-            bool is_float = is_float_expression(nodes, expr_idx);
+            // We need to check if either operand is a float
+            bool left_is_float = is_float_expression_impl(nodes, left_idx, string_pool);
+            bool right_is_float = is_float_expression_impl(nodes, right_idx, string_pool);
+            bool is_float = left_is_float || right_is_float;
+            
+            print_str("[BINARY] left_is_float=");
+            print_num(left_is_float);
+            print_str(" right_is_float=");
+            print_num(right_is_float);
+            print_str(" => is_float=");
+            print_num(is_float);
+            print_str("\n");
             
             if (is_float) {
+                print_str("[BINARY] Performing float operation\n");
                 // Float operation using SSE
                 // Evaluate right operand first
-                bool right_is_float = is_float_expression(nodes, right_idx);
                 generate_expression(buf, nodes, right_idx, symbols, string_pool);
                 
                 if (right_is_float) {
@@ -310,7 +396,6 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                 }
                 
                 // Evaluate left operand
-                bool left_is_float = is_float_expression(nodes, left_idx);
                 generate_expression(buf, nodes, left_idx, symbols, string_pool);
                 
                 if (!left_is_float) {
@@ -897,6 +982,46 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                     // Result is in RAX (integer) or XMM0 (float)
                     // For now, assume integer result - we'll improve this later
                     generate_print_number(buf, RAX);
+                } else if (content_node->type == NODE_IDENTIFIER) {
+                    // Special handling for identifiers - check variable type
+                    char var_name[256];
+                    uint32_t name_len = content_node->data.ident.name_len;
+                    if (name_len >= 256) name_len = 255;
+                    
+                    for (uint32_t i = 0; i < name_len; i++) {
+                        var_name[i] = string_pool[content_node->data.ident.name_offset + i];
+                    }
+                    var_name[name_len] = '\0';
+                    
+                    // Check variable type
+                    VarEntry* var = get_or_create_var(var_name);
+                    
+                    print_str("[OUTPUT] Variable name: ");
+                    print_str(var_name);
+                    print_str(" var ptr: ");
+                    print_num((unsigned long)var);
+                    print_str(" type: ");
+                    if (var) {
+                        print_num(var->var_type);
+                        print_str(" (VAR_TYPE_FLOAT=");
+                        print_num(VAR_TYPE_FLOAT);
+                        print_str(")\n");
+                    } else {
+                        print_str("NULL\n");
+                    }
+                    
+                    if (var && var->var_type == VAR_TYPE_FLOAT) {
+                        print_str("[OUTPUT] Variable is float type, calling generate_print_float\n");
+                        // Generate identifier - will load float into XMM0
+                        generate_expression(buf, nodes, content_idx, symbols, string_pool);
+                        // Print the float from XMM0
+                        generate_print_float(buf);
+                    } else {
+                        // Generate identifier - will load int into RAX
+                        generate_expression(buf, nodes, content_idx, symbols, string_pool);
+                        // Print integer
+                        generate_print_number(buf, RAX);
+                    }
                 } else {
                     // Check if this is a float expression
                     if (is_float_expression(nodes, content_idx)) {

@@ -96,7 +96,7 @@ void generate_print_float(CodeBuffer* buf) {
     
     // Extract integer part with truncation (not rounding)
     // We need to use cvttsd2si (with two 't's) for truncation
-    // cvttsd2si rax, xmm1
+    // cvttsd2si rbx, xmm1
     emit_byte(buf, 0xF2); // SD prefix
     emit_byte(buf, 0x48); // REX.W for 64-bit
     emit_byte(buf, 0x0F); 
@@ -199,13 +199,16 @@ void generate_print_float(CodeBuffer* buf) {
     emit_movsd_xmm_imm(buf, XMM2, 10.0);
     emit_mulsd_xmm_xmm(buf, XMM0, XMM2);
     
-    // Convert to integer (truncate)
+    // Convert to integer (truncate) to get first decimal digit
     // cvttsd2si rax, xmm0
     emit_byte(buf, 0xF2); 
     emit_byte(buf, 0x48); 
     emit_byte(buf, 0x0F); 
     emit_byte(buf, 0x2C); 
     emit_byte(buf, 0xC0); // RAX, XMM0
+    
+    // Save first digit
+    emit_push_reg(buf, RAX);
     
     // Print first decimal digit
     emit_add_reg_imm32(buf, RAX, '0');
@@ -217,8 +220,27 @@ void generate_print_float(CodeBuffer* buf) {
     emit_syscall(buf);
     emit_add_reg_imm32(buf, RSP, 8);
     
-    // For now, just print '0' as second decimal
-    emit_mov_reg_imm64(buf, RAX, '0');
+    // Restore first digit
+    emit_pop_reg(buf, RAX);
+    
+    // Convert first digit back to float and subtract
+    emit_cvtsi2sd_xmm_reg(buf, XMM2, RAX);
+    emit_subsd_xmm_xmm(buf, XMM0, XMM2);
+    
+    // Multiply remainder by 10 for second digit
+    emit_movsd_xmm_imm(buf, XMM2, 10.0);
+    emit_mulsd_xmm_xmm(buf, XMM0, XMM2);
+    
+    // Convert to integer (truncate) to get second decimal digit
+    // cvttsd2si rax, xmm0
+    emit_byte(buf, 0xF2); 
+    emit_byte(buf, 0x48); 
+    emit_byte(buf, 0x0F); 
+    emit_byte(buf, 0x2C); 
+    emit_byte(buf, 0xC0); // RAX, XMM0
+    
+    // Print second decimal digit
+    emit_add_reg_imm32(buf, RAX, '0');
     emit_push_reg(buf, RAX);
     emit_mov_reg_imm64(buf, RAX, 1);
     emit_mov_reg_imm64(buf, RDI, 1);

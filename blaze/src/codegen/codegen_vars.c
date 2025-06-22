@@ -25,6 +25,7 @@ extern void emit_movsd_xmm_mem(CodeBuffer* buf, SSERegister dst, X64Register bas
 extern void emit_movsd_mem_xmm(CodeBuffer* buf, X64Register base, SSERegister src);
 extern void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                                SymbolTable* symbols, char* string_pool);
+extern bool is_float_expression_impl(ASTNode* nodes, uint16_t expr_idx, char* string_pool);
 
 // Variable storage area
 // We'll use a simple approach: allocate space on the stack for variables
@@ -62,19 +63,23 @@ static uint32_t hash_string(const char* str) {
 }
 
 // Find or allocate a variable slot
-static VarEntry* get_or_create_var(const char* name) {
+VarEntry* get_or_create_var(const char* name) {
     uint32_t hash = hash_string(name);
     
-    // Debug output disabled
-    // print_str("[VAR] get_or_create_var: name='");
-    // print_str(name);
-    // print_str("' hash=");
-    // print_num(hash);
-    // print_str("\n");
+    print_str("[VAR] get_or_create_var: name='");
+    print_str(name);
+    print_str("' hash=");
+    print_num(hash);
+    print_str("\n");
     
     // Look for existing variable
     for (uint32_t i = 0; i < var_count; i++) {
         if (var_table[i].name_hash == hash) {
+            print_str("[VAR] Found existing var at index ");
+            print_num(i);
+            print_str(" type=");
+            print_num(var_table[i].var_type);
+            print_str("\n");
             return &var_table[i];
         }
     }
@@ -165,13 +170,32 @@ void generate_var_load(CodeBuffer* buf, const char* var_name, X64Register dest_r
 
 // Generate code to store float variable from XMM0
 void generate_var_store_float(CodeBuffer* buf, const char* var_name) {
+    print_str("[VAR_STORE_FLOAT] Storing float variable '");
+    print_str(var_name);
+    print_str("' from XMM0\n");
+    
     VarEntry* var = get_or_create_var(var_name);
-    if (!var) return;
+    if (!var) {
+        print_str("[VAR_STORE_FLOAT] ERROR: Failed to get/create variable\n");
+        return;
+    }
+    
+    print_str("[VAR_STORE_FLOAT] Variable info: stack_offset=");
+    print_num(var->stack_offset);
+    print_str(" var_type=");
+    print_num(var->var_type);
+    print_str(" was_initialized=");
+    print_num(var->is_initialized);
+    print_str("\n");
     
     var->is_initialized = true;
     
     // Store XMM0 to [RBP + offset]
     // movsd [rbp + offset], xmm0
+    print_str("[VAR_STORE_FLOAT] Emitting movsd [rbp+");
+    print_num(var->stack_offset);
+    print_str("], xmm0\n");
+    
     emit_byte(buf, 0xF2); // SD prefix
     emit_byte(buf, 0x0F);
     emit_byte(buf, 0x11);
@@ -182,14 +206,32 @@ void generate_var_store_float(CodeBuffer* buf, const char* var_name) {
     emit_byte(buf, (offset >> 8) & 0xFF);
     emit_byte(buf, (offset >> 16) & 0xFF);
     emit_byte(buf, (offset >> 24) & 0xFF);
+    
+    print_str("[VAR_STORE_FLOAT] Float store complete\n");
 }
 
 // Generate code to load float variable into XMM0
 void generate_var_load_float(CodeBuffer* buf, const char* var_name) {
+    print_str("[VAR_LOAD_FLOAT] Loading float variable '");
+    print_str(var_name);
+    print_str("' to XMM0\n");
+    
     VarEntry* var = get_or_create_var(var_name);
     if (!var || !var->is_initialized) {
         // Variable not found or not initialized - load 0.0
+        print_str("[VAR_LOAD_FLOAT] Variable not found or not initialized, loading 0.0\n");
+        print_str("[VAR_LOAD_FLOAT] var=");
+        print_num((unsigned long)var);
+        if (var) {
+            print_str(" is_initialized=");
+            print_num(var->is_initialized);
+            print_str(" var_type=");
+            print_num(var->var_type);
+        }
+        print_str("\n");
+        
         // xorpd xmm0, xmm0
+        print_str("[VAR_LOAD_FLOAT] Emitting xorpd xmm0, xmm0\n");
         emit_byte(buf, 0x66);
         emit_byte(buf, 0x0F);
         emit_byte(buf, 0x57);
@@ -197,8 +239,20 @@ void generate_var_load_float(CodeBuffer* buf, const char* var_name) {
         return;
     }
     
+    print_str("[VAR_LOAD_FLOAT] Variable info: stack_offset=");
+    print_num(var->stack_offset);
+    print_str(" var_type=");
+    print_num(var->var_type);
+    print_str(" is_initialized=");
+    print_num(var->is_initialized);
+    print_str("\n");
+    
     // Load from [RBP + offset] to XMM0
     // movsd xmm0, [rbp + offset]
+    print_str("[VAR_LOAD_FLOAT] Emitting movsd xmm0, [rbp+");
+    print_num(var->stack_offset);
+    print_str("]\n");
+    
     emit_byte(buf, 0xF2); // SD prefix
     emit_byte(buf, 0x0F);
     emit_byte(buf, 0x10);
@@ -209,6 +263,8 @@ void generate_var_load_float(CodeBuffer* buf, const char* var_name) {
     emit_byte(buf, (offset >> 8) & 0xFF);
     emit_byte(buf, (offset >> 16) & 0xFF);
     emit_byte(buf, (offset >> 24) & 0xFF);
+    
+    print_str("[VAR_LOAD_FLOAT] Float load complete\n");
 }
 
 // Generate code for variable definition with initialization
@@ -248,9 +304,31 @@ void generate_var_def_new(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
     
     // Get variable name
     char var_name[256];
+    
+    // Debug: print raw node data
+    print_str("[VAR] Raw node data: ");
+    uint8_t* raw = (uint8_t*)&node->data;
+    for (int i = 0; i < 16; i++) {
+        print_num(raw[i]);
+        print_str(" ");
+    }
+    print_str("\n");
+    
     uint32_t name_len = node->data.ident.name_len;
     uint16_t init_idx = node->data.timing.temporal_offset;  // Init expr stored here
-    uint8_t var_type = 'v';  // Default to generic var for now
+    
+    // For now, determine var_type from the init expression type
+    char var_type = 'v';  // Default
+    if (init_idx > 0 && init_idx < 4096) {
+        ASTNode* init_node = &nodes[init_idx];
+        if (init_node->type == NODE_FLOAT) {
+            var_type = 'f';
+        } else if (init_node->type == NODE_STRING) {
+            var_type = 's';
+        } else if (init_node->type == NODE_NUMBER) {
+            var_type = 'i';
+        }
+    }
     
     if (name_len == 0 || name_len > 255) {
         print_str("[VAR] ERROR: Invalid name_len=");
@@ -280,14 +358,30 @@ void generate_var_def_new(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
     }
     var_name[name_len] = '\0';
     
-    // Debug output disabled
-    // print_str("[VAR] generate_var_def_new: name='");
-    // print_str(var_name);
-    // print_str("' len=");
-    // print_num(name_len);
-    // print_str(" offset=");
-    // print_num(node->data.ident.name_offset);
-    // print_str("\n");
+    // Debug: print string pool contents at offset
+    print_str("[VAR] String pool at offset ");
+    print_num(node->data.ident.name_offset);
+    print_str(": ");
+    for (uint32_t i = 0; i < 10 && i < name_len + 5; i++) {
+        char c = string_pool[node->data.ident.name_offset + i];
+        if (c >= 32 && c <= 126) {
+            char buf[2] = {c, 0};
+            print_str(buf);
+        } else {
+            print_str("[");
+            print_num(c);
+            print_str("]");
+        }
+    }
+    print_str("\n");
+    
+    print_str("[VAR] generate_var_def_new: name='");
+    print_str(var_name);
+    print_str("' len=");
+    print_num(name_len);
+    print_str(" offset=");
+    print_num(node->data.ident.name_offset);
+    print_str("\n");
     
     print_str("\n[VAR] init_idx=");
     print_num(init_idx);
@@ -304,6 +398,8 @@ void generate_var_def_new(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
         print_num(init_node->type);
         print_str(" (NODE_NUMBER=");
         print_num(NODE_NUMBER);
+        print_str(", NODE_FLOAT=");
+        print_num(NODE_FLOAT);
         print_str(")\n");
         
         if (init_node->type == NODE_NUMBER) {
@@ -321,8 +417,14 @@ void generate_var_def_new(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
             // Store in variable
             generate_var_store(buf, var_name, RAX);
         } else if (init_node->type == NODE_FLOAT) {
+            print_str("[VAR] Processing NODE_FLOAT with var_name='");
+            print_str(var_name);
+            print_str("'\n");
             // Create float variable
             VarEntry* var = get_or_create_var_typed(var_name, VAR_TYPE_FLOAT);
+            print_str("[VAR] Created float variable, type=");
+            print_num(var ? var->var_type : -1);
+            print_str("\n");
             // Generate expression to load float into XMM0
             generate_expression(buf, nodes, init_idx, symbols, string_pool);
             // Store float from XMM0
@@ -338,19 +440,32 @@ void generate_var_def_new(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
             // Handle any other expression (like binary operations)
             print_str("[VAR] Initializing with expression\n");
             
-            // Create variable based on type
+            // Check if the expression result is a float
+            bool is_float_expr = is_float_expression_impl(nodes, init_idx, string_pool);
+            
+            print_str("[VAR] Expression is_float=");
+            print_num(is_float_expr);
+            print_str("\n");
+            
+            // Create variable based on expression type (overrides var_type if needed)
             VarEntry* var = NULL;
-            if (var_type == 'i' || var_type == 'v') {
-                var = get_or_create_var_typed(var_name, VAR_TYPE_INT);
-            } else if (var_type == 'f') {
+            if (is_float_expr || var_type == 'f') {
+                print_str("[VAR] Creating FLOAT variable due to is_float_expr=");
+                print_num(is_float_expr);
+                print_str(" or var_type=");
+                print_num(var_type);
+                print_str("\n");
                 var = get_or_create_var_typed(var_name, VAR_TYPE_FLOAT);
+            } else {
+                print_str("[VAR] Creating INT variable\n");
+                var = get_or_create_var_typed(var_name, VAR_TYPE_INT);
             }
             
             // Generate the expression - result will be in RAX (int) or XMM0 (float)
             generate_expression(buf, nodes, init_idx, symbols, string_pool);
             
-            // Store result based on type
-            if (var_type == 'f') {
+            // Store result based on actual expression type
+            if (is_float_expr || var_type == 'f') {
                 generate_var_store_float(buf, var_name);
             } else {
                 generate_var_store(buf, var_name, RAX);
@@ -397,4 +512,10 @@ void generate_identifier(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
 void reset_var_table(void) {
     var_count = 0;
     next_stack_offset = -8;
+}
+
+// Check if a variable is a float type
+bool is_var_float(const char* name) {
+    VarEntry* var = get_or_create_var(name);
+    return var && var->var_type == VAR_TYPE_FLOAT;
 }

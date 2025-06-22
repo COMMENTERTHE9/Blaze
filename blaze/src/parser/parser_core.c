@@ -170,17 +170,33 @@ static uint32_t store_string_literal(Parser* p, Token* tok) {
 static uint16_t parse_number(Parser* p) {
     Token* num_tok = advance(p);
     
+    print_str("[PARSE_NUMBER] Token start=");
+    print_num(num_tok->start);
+    print_str(" len=");
+    print_num(num_tok->len);
+    print_str(" value=");
+    for (uint16_t i = 0; i < num_tok->len; i++) {
+        char c = p->source[num_tok->start + i];
+        char buf[2] = {c, 0};
+        print_str(buf);
+    }
+    print_str("\n");
+    
     // Check if it's a float (contains . or e/E)
     bool is_float = false;
     for (uint16_t i = 0; i < num_tok->len; i++) {
         char c = p->source[num_tok->start + i];
         if (c == '.' || c == 'e' || c == 'E') {
             is_float = true;
+            print_str("[PARSE_NUMBER] Found float indicator at pos ");
+            print_num(i);
+            print_str("\n");
             break;
         }
     }
     
     if (is_float) {
+        // Creating NODE_FLOAT
         uint16_t node_idx = alloc_node(p, NODE_FLOAT);
         if (node_idx == 0) return 0;
         
@@ -227,8 +243,10 @@ static uint16_t parse_number(Parser* p) {
         }
         
         p->nodes[node_idx].data.float_value = value;
+        // Stored float value
         return node_idx;
     } else {
+        // Creating NODE_NUMBER
         uint16_t node_idx = alloc_node(p, NODE_NUMBER);
         if (node_idx == 0) return 0;
         
@@ -876,7 +894,8 @@ static uint16_t parse_var_def(Parser* p) {
     // We'll use the timing.temporal_offset field which is 32-bit
     p->nodes[var_node].data.timing.temporal_offset = 0;  // Clear it first
     
-    // Don't store var_type for now - we'll store init_expr in upper bits instead
+    // Don't store var_type in timing_op - it overlaps with ident fields!
+    // Instead, we'll determine var_type from the token type at codegen time
     
     print_str("[PARSER] Created NODE_VAR_DEF at idx=");
     print_num(var_node);
