@@ -37,7 +37,7 @@ extern bool is_solid_expression_impl(ASTNode* nodes, uint16_t expr_idx, char* st
 
 typedef struct {
     uint32_t name_hash;
-    int32_t stack_offset;  // Offset from RBP
+    int32_t stack_offset;  // Offset from original RSP (negative)
     bool is_initialized;
     uint8_t var_type;      // Variable type (VAR_TYPE_INT, VAR_TYPE_FLOAT, etc.)
 } VarEntry;
@@ -52,7 +52,7 @@ typedef struct {
 // Global variable table (should be per-function in the future)
 static VarEntry var_table[MAX_VARS];
 static uint32_t var_count = 0;
-static int32_t next_stack_offset = -8;  // Start after saved RBP
+static int32_t next_stack_offset = -8;  // Start at -8 from original RSP
 static bool frame_setup = false;  // Track if we've set up the stack frame
 
 // Simple hash function for variable names
@@ -69,9 +69,8 @@ static uint32_t hash_string(const char* str) {
 static void ensure_frame_setup(CodeBuffer* buf) {
     if (!frame_setup) {
         print_str("[VAR] Setting up stack frame on first variable use\n");
-        // Set up a frame for variables
-        emit_push_reg(buf, RBP);
-        emit_mov_reg_reg(buf, RBP, RSP);
+        // For main program, just allocate variable space without full frame setup
+        // Don't push RBP or set it - we're not in a function
         // Reserve space for variables (256 bytes for 32 variables)
         emit_sub_reg_imm32(buf, RSP, 256);
         frame_setup = true;
@@ -134,10 +133,10 @@ void generate_var_storage_cleanup(CodeBuffer* buf) {
     // Only clean up if we set up a frame
     if (frame_setup) {
         print_str("[VAR_CLEANUP] Restoring stack frame\n");
-        // Restore stack frame properly
-        // Note: We don't need to explicitly add 256 to RSP because mov rsp, rbp does it
-        emit_mov_reg_reg(buf, RSP, RBP);   // mov rsp, rbp - restore stack pointer
-        emit_pop_reg(buf, RBP);            // pop rbp - restore base pointer
+        // For the main program (not in a function), we just need to restore RSP
+        // We don't pop RBP because there's no caller to return to
+        emit_add_reg_imm32(buf, RSP, 256);  // Clean up local variable space
+        // Don't restore RBP or pop it - we're at the top level
     }
 }
 
@@ -159,8 +158,10 @@ void generate_var_store(CodeBuffer* buf, const char* var_name, X64Register value
     print_num(var->stack_offset);
     print_str("\n");
     
-    // Store value at [RBP + offset]
-    emit_mov_mem_reg(buf, RBP, var->stack_offset, value_reg);
+    // Store value at [RSP + offset + 256] (since we allocated 256 bytes)
+    // The offset is negative from the original RSP, but we've moved RSP down by 256
+    // So actual offset from current RSP is 256 + var->stack_offset
+    emit_mov_mem_reg(buf, RSP, 256 + var->stack_offset, value_reg);
     var->is_initialized = true;
 }
 
@@ -190,7 +191,7 @@ void generate_var_load(CodeBuffer* buf, const char* var_name, X64Register dest_r
     print_str("\n");
     
     // Load value from [RBP + offset]
-    emit_mov_reg_mem(buf, dest_reg, RBP, var->stack_offset);
+    emit_mov_reg_mem(buf, dest_reg, RSP, 256 + var->stack_offset);
 }
 
 // Generate code to store float variable from XMM0
@@ -218,18 +219,19 @@ void generate_var_store_float(CodeBuffer* buf, const char* var_name) {
     
     var->is_initialized = true;
     
-    // Store XMM0 to [RBP + offset]
-    // movsd [rbp + offset], xmm0
-    print_str("[VAR_STORE_FLOAT] Emitting movsd [rbp+");
-    print_num(var->stack_offset);
+    // Store XMM0 to [RSP + offset + 256]
+    // movsd [rsp + offset], xmm0
+    print_str("[VAR_STORE_FLOAT] Emitting movsd [rsp+");
+    print_num(256 + var->stack_offset);
     print_str("], xmm0\n");
     
     emit_byte(buf, 0xF2); // SD prefix
     emit_byte(buf, 0x0F);
     emit_byte(buf, 0x11);
-    emit_byte(buf, 0x85); // ModRM: [RBP + disp32]
+    emit_byte(buf, 0x84); // ModRM: [RSP + disp32]
+    emit_byte(buf, 0x24); // SIB byte for RSP
     // Emit 32-bit displacement
-    int32_t offset = var->stack_offset;
+    int32_t offset = 256 + var->stack_offset;
     emit_byte(buf, offset & 0xFF);
     emit_byte(buf, (offset >> 8) & 0xFF);
     emit_byte(buf, (offset >> 16) & 0xFF);
@@ -278,18 +280,19 @@ void generate_var_load_float(CodeBuffer* buf, const char* var_name) {
     print_num(var->is_initialized);
     print_str("\n");
     
-    // Load from [RBP + offset] to XMM0
-    // movsd xmm0, [rbp + offset]
-    print_str("[VAR_LOAD_FLOAT] Emitting movsd xmm0, [rbp+");
-    print_num(var->stack_offset);
+    // Load from [RSP + offset + 256] to XMM0
+    // movsd xmm0, [rsp + offset]
+    print_str("[VAR_LOAD_FLOAT] Emitting movsd xmm0, [rsp+");
+    print_num(256 + var->stack_offset);
     print_str("]\n");
     
     emit_byte(buf, 0xF2); // SD prefix
     emit_byte(buf, 0x0F);
     emit_byte(buf, 0x10);
-    emit_byte(buf, 0x85); // ModRM: [RBP + disp32]
+    emit_byte(buf, 0x84); // ModRM: [RSP + disp32]
+    emit_byte(buf, 0x24); // SIB byte for RSP
     // Emit 32-bit displacement
-    int32_t offset = var->stack_offset;
+    int32_t offset = 256 + var->stack_offset;
     emit_byte(buf, offset & 0xFF);
     emit_byte(buf, (offset >> 8) & 0xFF);
     emit_byte(buf, (offset >> 16) & 0xFF);

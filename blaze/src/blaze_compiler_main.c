@@ -291,8 +291,8 @@ int main(int argc, char** argv) {
     print_str("[MAIN] Code generation completed\n");
     
     // Clean up variable storage before exit
-    extern void generate_var_storage_cleanup(CodeBuffer* buf);
-    generate_var_storage_cleanup(&code_buf);
+    // extern void generate_var_storage_cleanup(CodeBuffer* buf);
+    // generate_var_storage_cleanup(&code_buf);
     
     // Exit cleanly
     emit_platform_exit(&code_buf, PLATFORM_LINUX, 0);
