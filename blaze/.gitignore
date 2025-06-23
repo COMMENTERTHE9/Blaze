@@ -1,1 +1,5 @@
 test*.blaze
+test_*_out
+test_*
+out
+out2
