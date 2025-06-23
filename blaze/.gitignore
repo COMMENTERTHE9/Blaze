@@ -3,3 +3,7 @@ test_*_out
 test_*
 out
 out2
+*.o
+blaze
+blaze_debug
+blaze_*

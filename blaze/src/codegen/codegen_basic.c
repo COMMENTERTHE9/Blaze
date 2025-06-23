@@ -407,13 +407,11 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
             // Create solid number from AST node
             print_str("[EXPR] Loading solid number\n");
             
-            // For now, store a pointer to the solid number in RAX
-            // In a real implementation, we'd allocate and initialize the solid number
-            // and return its address
-            
-            // Emit code to create solid number at runtime
-            // This is a placeholder - in real implementation would call solid_init_from_ast
-            emit_mov_reg_imm64(buf, RAX, expr_idx | 0x8000000000000000ULL);  // Mark as solid with high bit
+            // Call our solid number code generator
+            extern void generate_solid_literal(CodeBuffer* buf, ASTNode* nodes, 
+                                             uint16_t node_idx, char* string_pool);
+            generate_solid_literal(buf, nodes, expr_idx, string_pool);
+            // Result (solid pointer) is now in RAX
             break;
         }
         
@@ -450,23 +448,14 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
             
             if (is_solid) {
                 print_str("[BINARY] Performing solid number operation\n");
-                // Solid number operations require special handling
-                // For now, just load a placeholder value
-                
-                // Generate left operand
-                generate_expression(buf, nodes, left_idx, symbols, string_pool);
-                emit_push_reg(buf, RAX);
-                
-                // Generate right operand  
-                generate_expression(buf, nodes, right_idx, symbols, string_pool);
-                emit_mov_reg_reg(buf, RDI, RAX);  // Right operand in RDI
-                
-                // Get left operand back
-                emit_pop_reg(buf, RSI);  // Left operand in RSI
-                
-                // TODO: Call appropriate solid arithmetic function
-                // For now, just return a placeholder
-                emit_mov_reg_imm64(buf, RAX, 0x8000000000000001ULL);  // Solid number marker
+                // Call our solid arithmetic code generator
+                extern void generate_solid_arithmetic(CodeBuffer* buf, ASTNode* nodes, 
+                                                    uint16_t left_idx, uint16_t right_idx,
+                                                    TokenType op, SymbolTable* symbols, 
+                                                    char* string_pool);
+                generate_solid_arithmetic(buf, nodes, left_idx, right_idx, op, 
+                                        symbols, string_pool);
+                // Result (solid pointer) is now in RAX
             } else if (is_float) {
                 print_str("[BINARY] Performing float operation\n");
                 // Float operation using SSE
@@ -1050,6 +1039,13 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                 generate_expression(buf, nodes, content_idx, symbols, string_pool);
                 // Print the float from XMM0
                 generate_print_float(buf);
+            } else if (content_node->type == NODE_SOLID) {
+                // Generate the solid number (pointer in RAX)
+                generate_expression(buf, nodes, content_idx, symbols, string_pool);
+                // Print the solid number from RAX
+                extern void generate_print_solid(CodeBuffer* buf);
+                generate_print_solid(buf);
+                // No stack cleanup needed since we're not allocating yet
             } else if (content_node->type == NODE_STRING) {
                 // For string nodes, the name_offset points to string pool
                 const char* str_content = &string_pool[content_node->data.ident.name_offset];
@@ -1112,8 +1108,14 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                         generate_print_number(buf, RAX);
                     }
                 } else {
-                    // Check if this is a float expression
-                    if (is_float_expression(nodes, content_idx)) {
+                    // Check if this is a solid expression
+                    if (is_solid_expression_impl(nodes, content_idx, string_pool)) {
+                        // Generate the solid expression (pointer in RAX)
+                        generate_expression(buf, nodes, content_idx, symbols, string_pool);
+                        // Print the solid number from RAX
+                        extern void generate_print_solid(CodeBuffer* buf);
+                        generate_print_solid(buf);
+                    } else if (is_float_expression(nodes, content_idx)) {
                         // Generate the float expression in XMM0
                         generate_expression(buf, nodes, content_idx, symbols, string_pool);
                         // Print the float from XMM0

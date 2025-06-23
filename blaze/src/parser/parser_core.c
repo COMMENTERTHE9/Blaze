@@ -1868,8 +1868,9 @@ static uint16_t parse_statement(Parser* p) {
             
             p->nodes[output_node].data.output.content_idx = id_node;
         } else if (check(p, TOK_NUMBER) || check(p, TOK_MINUS) || 
-                   check(p, TOK_LPAREN) || check(p, TOK_MATH_PREFIX)) {
-            // Parse expression (could be number, arithmetic, math function, etc.)
+                   check(p, TOK_LPAREN) || check(p, TOK_MATH_PREFIX) ||
+                   check(p, TOK_SOLID_NUMBER)) {
+            // Parse expression (could be number, arithmetic, math function, solid number, etc.)
             uint16_t expr_node = parse_expression(p);
             p->nodes[output_node].data.output.content_idx = expr_node;
         } else if (check(p, TOK_STRING)) {

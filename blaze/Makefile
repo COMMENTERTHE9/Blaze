@@ -30,6 +30,7 @@ SRCS = src/blaze_compiler_main_clean.c \
        src/codegen/codegen_vars.c \
        src/codegen/codegen_func.c \
        src/codegen/codegen_math.c \
+       src/codegen/codegen_solid.c \
        src/codegen/codegen_init_minimal.c \
        src/codegen/codegen_platform.c \
        src/codegen/codegen_output.c \
