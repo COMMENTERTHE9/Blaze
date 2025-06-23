@@ -275,12 +275,108 @@ static uint16_t parse_solid_number(Parser* p) {
     uint32_t pos = 0;
     uint32_t len = tok->len;
     
+    print_str("[PARSER] parse_solid_number: token content='");
+    for (uint32_t i = 0; i < len && i < 50; i++) {
+        char buf[2] = {input[i], 0};
+        print_str(buf);
+    }
+    print_str("' len=");
+    print_num(len);
+    print_str("\n");
+    
+    // Check for quick syntax: number followed by '!'
+    if (len > 0 && input[len - 1] == '!') {
+        print_str("[PARSER] Parsing exact solid number with '!' suffix\n");
+        
+        // Parse the number part (excluding '!')
+        uint32_t known_len = len - 1;
+        
+        // Store known digits in string pool
+        uint32_t known_offset = p->string_pos;
+        if (p->string_pos + known_len + 1 > 4096) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        for (uint32_t i = 0; i < known_len; i++) {
+            p->string_pool[p->string_pos++] = input[i];
+        }
+        p->string_pool[p->string_pos++] = '\0';
+        
+        // Set as exact solid number
+        p->nodes[node].data.solid.known_offset = known_offset;
+        p->nodes[node].data.solid.known_len = known_len;
+        p->nodes[node].data.solid.barrier_type = 'x';  // exact
+        p->nodes[node].data.solid.gap_magnitude = 0;
+        p->nodes[node].data.solid.confidence_x1000 = 1000;  // 100%
+        p->nodes[node].data.solid.terminal_len = 0;  // No terminal digits for exact numbers
+        p->nodes[node].data.solid.terminal_offset = 0;
+        p->nodes[node].data.solid.terminal_type = 0;  // TERMINAL_DIGITS
+        
+        return node;
+    }
+    
+    // Check for quick syntax: number~terminals (quantum barrier)
+    uint32_t tilde_pos = 0;
+    for (uint32_t i = 0; i < len; i++) {
+        if (input[i] == '~') {
+            tilde_pos = i;
+            break;
+        }
+    }
+    
+    if (tilde_pos > 0) {
+        print_str("[PARSER] Parsing quantum solid number with '~' syntax\n");
+        
+        // Parse known digits (before ~)
+        uint32_t known_len = tilde_pos;
+        uint32_t known_offset = p->string_pos;
+        if (p->string_pos + known_len + 1 > 4096) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        for (uint32_t i = 0; i < known_len; i++) {
+            p->string_pool[p->string_pos++] = input[i];
+        }
+        p->string_pool[p->string_pos++] = '\0';
+        
+        // Parse terminal digits (after ~)
+        uint32_t terminal_start = tilde_pos + 1;
+        uint32_t terminal_len = len - terminal_start;
+        uint32_t terminal_offset = p->string_pos;
+        
+        if (terminal_len > 0) {
+            if (p->string_pos + terminal_len + 1 > 4096) {
+                p->has_error = true;
+                return 0;
+            }
+            
+            for (uint32_t i = 0; i < terminal_len; i++) {
+                p->string_pool[p->string_pos++] = input[terminal_start + i];
+            }
+            p->string_pool[p->string_pos++] = '\0';
+        }
+        
+        // Set as quantum solid number with default confidence
+        p->nodes[node].data.solid.known_offset = known_offset;
+        p->nodes[node].data.solid.known_len = known_len;
+        p->nodes[node].data.solid.barrier_type = 'q';  // quantum
+        p->nodes[node].data.solid.gap_magnitude = 0xFFFFFFFFFFFFFFFFULL;  // Use max value for now (10^35 is too large)
+        p->nodes[node].data.solid.confidence_x1000 = 850;  // 85% default
+        p->nodes[node].data.solid.terminal_len = terminal_len;
+        p->nodes[node].data.solid.terminal_offset = terminal_offset;
+        p->nodes[node].data.solid.terminal_type = terminal_len > 0 ? 0 : 2;  // TERMINAL_DIGITS : TERMINAL_SUPERPOSITION
+        
+        return node;
+    }
+    
     // Parse known digits (before first ...)
     uint32_t known_start = pos;
-    while (pos < len && input[pos] != '.') {
+    while (pos < len && input[pos] != '.' && input[pos] != '!') {
         pos++;
     }
-    uint32_t known_len = pos;
+    uint32_t known_len = pos - known_start;
     
     // Store known digits in string pool
     uint32_t known_offset = p->string_pos;
@@ -290,7 +386,7 @@ static uint16_t parse_solid_number(Parser* p) {
     }
     
     for (uint32_t i = 0; i < known_len; i++) {
-        p->string_pool[p->string_pos++] = input[i];
+        p->string_pool[p->string_pos++] = input[known_start + i];
     }
     p->string_pool[p->string_pos++] = '\0';
     
@@ -1000,7 +1096,7 @@ static uint16_t parse_var_def(Parser* p) {
     // Allocated node
     
     // Store the variable type
-    // 0 = generic var, 1 = const, 2 = int, 3 = float, 4 = string, 5 = bool
+    // 0 = generic var, 1 = const, 2 = int, 3 = float, 4 = string, 5 = bool, 6 = solid
     uint8_t var_type = 0;
     switch (var_tok->type) {
         case TOK_VAR: var_type = 0; break;
@@ -1009,6 +1105,7 @@ static uint16_t parse_var_def(Parser* p) {
         case TOK_VAR_FLOAT: var_type = 3; break;
         case TOK_VAR_STRING: var_type = 4; break;
         case TOK_VAR_BOOL: var_type = 5; break;
+        case TOK_VAR_SOLID: var_type = 6; break;
     }
     
     // Extract variable name from the token
@@ -1017,7 +1114,7 @@ static uint16_t parse_var_def(Parser* p) {
     // Check which syntax we have
     if (var_tok->type == TOK_VAR_INT || var_tok->type == TOK_VAR_FLOAT ||
         var_tok->type == TOK_VAR_STRING || var_tok->type == TOK_VAR_BOOL ||
-        var_tok->type == TOK_CONST) {
+        var_tok->type == TOK_VAR_SOLID || var_tok->type == TOK_CONST) {
         // Typed variable: var.t-name-
         name_start = var_tok->start + 6; // Skip "var.t-"
         name_len = var_tok->len - 6; // Remove "var.t-"
@@ -1113,11 +1210,128 @@ static uint16_t parse_var_def(Parser* p) {
             // Empty brackets [] - no initializer
             init_expr = 0;
         } else {
-            // Parse any expression (number, identifier, binary op, etc.)
-            init_expr = parse_expression(p);
-            if (init_expr == 0) {
-                p->has_error = true;
-                return 0;
+            // Special handling for var.d- (solid) variables with string initializers
+            if (var_type == 6 && check(p, TOK_STRING)) {
+                // For solid variables, parse string as solid number content
+                Token* str_tok = advance(p);
+                
+                // Create a solid number node and parse the string content
+                uint16_t solid_node = alloc_node(p, NODE_SOLID);
+                if (solid_node == 0) return 0;
+                
+                // Get the string content (without quotes)
+                const char* str_content = p->source + str_tok->start + 1;
+                uint32_t str_len = str_tok->len - 2;
+                
+                // Parse the string as solid number content
+                // This allows letters and digits in solid numbers
+                uint32_t pos = 0;
+                
+                // Check for quick syntax in string
+                bool has_exclamation = false;
+                uint32_t tilde_pos = 0;
+                for (uint32_t i = 0; i < str_len; i++) {
+                    if (str_content[i] == '!') {
+                        has_exclamation = true;
+                        str_len = i; // Exclude ! from content
+                        break;
+                    } else if (str_content[i] == '~') {
+                        tilde_pos = i;
+                    }
+                }
+                
+                if (has_exclamation) {
+                    // Exact solid number
+                    uint32_t known_offset = p->string_pos;
+                    if (p->string_pos + str_len + 1 > 4096) {
+                        p->has_error = true;
+                        return 0;
+                    }
+                    
+                    for (uint32_t i = 0; i < str_len; i++) {
+                        p->string_pool[p->string_pos++] = str_content[i];
+                    }
+                    p->string_pool[p->string_pos++] = '\0';
+                    
+                    p->nodes[solid_node].data.solid.known_offset = known_offset;
+                    p->nodes[solid_node].data.solid.known_len = str_len;
+                    p->nodes[solid_node].data.solid.barrier_type = 'x';
+                    p->nodes[solid_node].data.solid.gap_magnitude = 0;
+                    p->nodes[solid_node].data.solid.confidence_x1000 = 1000;
+                    p->nodes[solid_node].data.solid.terminal_len = 0;  // No terminal digits for exact
+                    p->nodes[solid_node].data.solid.terminal_offset = 0;
+                    p->nodes[solid_node].data.solid.terminal_type = 0;
+                } else if (tilde_pos > 0) {
+                    // Quantum solid number with terminals
+                    uint32_t known_len = tilde_pos;
+                    uint32_t known_offset = p->string_pos;
+                    
+                    if (p->string_pos + known_len + 1 > 4096) {
+                        p->has_error = true;
+                        return 0;
+                    }
+                    
+                    for (uint32_t i = 0; i < known_len; i++) {
+                        p->string_pool[p->string_pos++] = str_content[i];
+                    }
+                    p->string_pool[p->string_pos++] = '\0';
+                    
+                    // Parse terminal digits
+                    uint32_t terminal_start = tilde_pos + 1;
+                    uint32_t terminal_len = str_len - terminal_start;
+                    uint32_t terminal_offset = p->string_pos;
+                    
+                    if (terminal_len > 0) {
+                        if (p->string_pos + terminal_len + 1 > 4096) {
+                            p->has_error = true;
+                            return 0;
+                        }
+                        
+                        for (uint32_t i = 0; i < terminal_len; i++) {
+                            p->string_pool[p->string_pos++] = str_content[terminal_start + i];
+                        }
+                        p->string_pool[p->string_pos++] = '\0';
+                    }
+                    
+                    p->nodes[solid_node].data.solid.known_offset = known_offset;
+                    p->nodes[solid_node].data.solid.known_len = known_len;
+                    p->nodes[solid_node].data.solid.barrier_type = 'q';
+                    p->nodes[solid_node].data.solid.gap_magnitude = 0xFFFFFFFFFFFFFFFFULL;
+                    p->nodes[solid_node].data.solid.confidence_x1000 = 850;
+                    p->nodes[solid_node].data.solid.terminal_len = terminal_len;
+                    p->nodes[solid_node].data.solid.terminal_offset = terminal_offset;
+                    p->nodes[solid_node].data.solid.terminal_type = terminal_len > 0 ? 0 : 2;
+                } else {
+                    // Simple solid number without special syntax
+                    uint32_t known_offset = p->string_pos;
+                    if (p->string_pos + str_len + 1 > 4096) {
+                        p->has_error = true;
+                        return 0;
+                    }
+                    
+                    for (uint32_t i = 0; i < str_len; i++) {
+                        p->string_pool[p->string_pos++] = str_content[i];
+                    }
+                    p->string_pool[p->string_pos++] = '\0';
+                    
+                    p->nodes[solid_node].data.solid.known_offset = known_offset;
+                    p->nodes[solid_node].data.solid.known_len = str_len;
+                    p->nodes[solid_node].data.solid.barrier_type = 'x';
+                    p->nodes[solid_node].data.solid.gap_magnitude = 0;
+                    p->nodes[solid_node].data.solid.confidence_x1000 = 1000;
+                    p->nodes[solid_node].data.solid.terminal_len = str_len;
+                    p->nodes[solid_node].data.solid.terminal_offset = known_offset;
+                    p->nodes[solid_node].data.solid.terminal_type = 0;
+                }
+                
+                init_expr = solid_node;
+            } else {
+                // Parse any expression (number, identifier, binary op, etc.)
+                init_expr = parse_expression(p);
+                if (init_expr == 0) {
+                    p->has_error = true;
+                    return 0;
+                }
             }
         }
         
@@ -1590,7 +1804,7 @@ static uint16_t parse_statement(Parser* p) {
     // Variable definition (all types)
     if (check(p, TOK_VAR) || check(p, TOK_VAR_INT) || 
         check(p, TOK_VAR_FLOAT) || check(p, TOK_VAR_STRING) || 
-        check(p, TOK_VAR_BOOL)) {
+        check(p, TOK_VAR_BOOL) || check(p, TOK_VAR_SOLID)) {
         print_str("[PARSER] Parsing variable definition\n");
         uint16_t var_node = parse_var_def(p);
         print_str("[PARSER] parse_var_def returned node_idx=");

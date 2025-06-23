@@ -442,9 +442,9 @@ void generate_var_def_new(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
             print_str("[VAR] Created solid variable, type=");
             print_num(var ? var->var_type : -1);
             print_str("\n");
-            // For now, store the node index as a placeholder
-            // TODO: Implement proper solid number storage and runtime representation
-            emit_mov_reg_imm64(buf, RAX, init_idx);
+            // Generate the solid literal - this will put a pointer to the solid data in RAX
+            generate_expression(buf, nodes, init_idx, symbols, string_pool);
+            // Store the pointer in the variable
             generate_var_store(buf, var_name, RAX);
         } else if (init_node->type == NODE_STRING) {
             // Create string variable

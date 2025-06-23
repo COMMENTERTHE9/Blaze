@@ -98,6 +98,7 @@ typedef enum {
     TOK_VAR_FLOAT,       // var.f-
     TOK_VAR_STRING,      // var.s-
     TOK_VAR_BOOL,        // var.b-
+    TOK_VAR_SOLID,       // var.d-
     TOK_ARRAY_4D,        // array.4d
     TOK_FUNC_CAN,        // fucn.can
     TOK_ERROR_CATCH,     // error.catch

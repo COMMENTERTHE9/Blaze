@@ -65,9 +65,86 @@ void generate_solid_literal(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
     
     print_str("[SOLID] Generating solid literal\n");
     
-    // For now, don't allocate anything - just return a dummy value
-    // This will help us debug the segfault
-    emit_mov_reg_imm64(buf, RAX, 0x12345678);
+    // Get solid number data from AST node
+    uint32_t known_offset = node->data.solid.known_offset;
+    uint16_t known_len = node->data.solid.known_len;
+    char barrier_type = node->data.solid.barrier_type;
+    uint64_t gap_magnitude = node->data.solid.gap_magnitude;
+    uint16_t confidence = node->data.solid.confidence_x1000;
+    uint32_t terminal_offset = node->data.solid.terminal_offset;
+    uint16_t terminal_len = node->data.solid.terminal_len;
+    uint8_t terminal_type = node->data.solid.terminal_type;
+    
+    print_str("[SOLID] Known: ");
+    for (uint16_t i = 0; i < known_len; i++) {
+        char ch[2] = {string_pool[known_offset + i], '\0'};
+        print_str(ch);
+    }
+    print_str(" barrier='");
+    char barrier_ch[2] = {barrier_type, '\0'};
+    print_str(barrier_ch);
+    print_str("' confidence=");
+    print_num(confidence);
+    print_str("\n");
+    
+    // Jump over the embedded data
+    emit_byte(buf, 0xEB);  // jmp short
+    emit_byte(buf, 64);    // skip 64 bytes of solid data
+    
+    // Remember where the solid data starts
+    uint32_t data_start = buf->position;
+    
+    // Simple inline solid structure:
+    // [0-1]  known_len (2 bytes)
+    // [2-3]  terminal_len (2 bytes) 
+    // [4]    barrier_type (1 byte)
+    // [5]    terminal_type (1 byte)
+    // [6-7]  confidence (2 bytes)
+    // [8-15] gap_magnitude (8 bytes)
+    // [16+]  known digits (variable)
+    // [?+]   terminal digits (variable)
+    
+    // Emit structure directly into code
+    emit_byte(buf, known_len & 0xFF);
+    emit_byte(buf, (known_len >> 8) & 0xFF);
+    emit_byte(buf, terminal_len & 0xFF);
+    emit_byte(buf, (terminal_len >> 8) & 0xFF);
+    emit_byte(buf, barrier_type);
+    emit_byte(buf, terminal_type);
+    emit_byte(buf, confidence & 0xFF);
+    emit_byte(buf, (confidence >> 8) & 0xFF);
+    
+    // Gap magnitude (8 bytes)
+    for (int i = 0; i < 8; i++) {
+        emit_byte(buf, (gap_magnitude >> (i * 8)) & 0xFF);
+    }
+    
+    // Copy known digits
+    for (uint16_t i = 0; i < known_len && i < 32; i++) {
+        emit_byte(buf, string_pool[known_offset + i]);
+    }
+    
+    // Copy terminal digits
+    uint16_t terminal_start_offset = 16 + known_len;
+    for (uint16_t i = 0; i < terminal_len && i < 16; i++) {
+        emit_byte(buf, string_pool[terminal_offset + i]);
+    }
+    
+    // Pad to exactly 64 bytes
+    while (buf->position < data_start + 64) {
+        emit_byte(buf, 0);
+    }
+    
+    // Load address of solid data into RAX using RIP-relative addressing
+    // lea rax, [rip - offset]
+    emit_byte(buf, 0x48);  // REX.W
+    emit_byte(buf, 0x8D);  // lea
+    emit_byte(buf, 0x05);  // ModRM: [RIP + disp32]
+    int32_t offset = -(buf->position - data_start + 4);
+    emit_byte(buf, offset & 0xFF);
+    emit_byte(buf, (offset >> 8) & 0xFF);
+    emit_byte(buf, (offset >> 16) & 0xFF);
+    emit_byte(buf, (offset >> 24) & 0xFF);
 }
 
 // Generate code for solid number arithmetic operation
@@ -233,36 +310,133 @@ void generate_inline_solid_divide(CodeBuffer* buf) {
 void generate_print_solid(CodeBuffer* buf) {
     print_str("[SOLID] Generating print_solid\n");
     
-    // For now, just print a simple placeholder message
-    const char* msg = "SOLID[...]\n";
+    // RAX contains pointer to solid data structure
+    // Format: known_len(2), terminal_len(2), barrier_type(1), terminal_type(1), 
+    //         confidence(2), gap_magnitude(8), data...
     
-    // Store message after a jump
-    emit_byte(buf, 0xEB); // jmp short
-    emit_byte(buf, 11);   // skip message bytes
+    // Save solid pointer
+    emit_push_reg(buf, RAX);
     
-    uint32_t msg_start = buf->position;
+    // First, print the known digits
+    // Get known_len from [RAX]
+    emit_push_reg(buf, RAX);  // Save pointer
     
-    // Emit message bytes
-    for (int i = 0; i < 11; i++) {
-        emit_byte(buf, msg[i]);
-    }
+    // movzx rdx, word [rax]  ; Load known_len into RDX
+    emit_byte(buf, 0x48);
+    emit_byte(buf, 0x0F);
+    emit_byte(buf, 0xB7);
+    emit_byte(buf, 0x10);
     
-    // mov rax, 1 (sys_write)
-    emit_mov_reg_imm64(buf, RAX, 1);
+    // lea rsi, [rax + 16]  ; Point to known digits
+    emit_lea(buf, RSI, RAX, 16);
     
-    // mov rdi, 1 (stdout)
-    emit_mov_reg_imm64(buf, RDI, 1);
-    
-    // lea rsi, [rip - offset] (message address)
-    int32_t offset = -(buf->position - msg_start + 7);
-    emit_lea(buf, RSI, RIP, offset);
-    
-    // mov rdx, 11 (message length)
-    emit_mov_reg_imm64(buf, RDX, 11);
-    
-    // syscall
+    // Print known digits
+    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
+    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
+    // RSI already points to known digits
+    // RDX already has length
     emit_syscall(buf);
     
-    // Don't clean up here - the caller is responsible for cleaning up
-    // the solid number structure that was allocated before calling this
+    emit_pop_reg(buf, RAX);  // Restore pointer
+    
+    // Print "..." if not exact
+    emit_push_reg(buf, RAX);
+    
+    // cmp byte [rax + 4], 'x'  ; Check barrier type
+    emit_byte(buf, 0x80);
+    emit_byte(buf, 0x78);
+    emit_byte(buf, 0x04);
+    emit_byte(buf, 'x');
+    
+    // je skip_ellipsis
+    emit_byte(buf, 0x74);
+    emit_byte(buf, 0x1A);  // Skip if exact
+    
+    // Print "..."
+    emit_byte(buf, 0xEB);  // jmp over string
+    emit_byte(buf, 0x03);
+    emit_byte(buf, '.');
+    emit_byte(buf, '.');
+    emit_byte(buf, '.');
+    
+    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
+    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
+    emit_lea(buf, RSI, RIP, -10);     // Point to "..."
+    emit_mov_reg_imm64(buf, RDX, 3);  // length 3
+    emit_syscall(buf);
+    
+    // skip_ellipsis:
+    emit_pop_reg(buf, RAX);  // Restore pointer
+    
+    // Check if we have terminal digits
+    emit_push_reg(buf, RAX);
+    
+    // movzx rdx, word [rax + 2]  ; Load terminal_len
+    emit_byte(buf, 0x48);
+    emit_byte(buf, 0x0F);
+    emit_byte(buf, 0xB7);
+    emit_byte(buf, 0x50);
+    emit_byte(buf, 0x02);
+    
+    // test rdx, rdx
+    emit_test_reg_reg(buf, RDX, RDX);
+    
+    // jz no_terminals
+    emit_byte(buf, 0x74);
+    emit_byte(buf, 0x28);  // Skip terminal printing
+    
+    // Print "..."
+    emit_byte(buf, 0xEB);  // jmp over string
+    emit_byte(buf, 0x03);
+    emit_byte(buf, '.');
+    emit_byte(buf, '.');
+    emit_byte(buf, '.');
+    
+    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
+    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
+    emit_lea(buf, RSI, RIP, -10);     // Point to "..."
+    emit_mov_reg_imm64(buf, RDX, 3);  // length 3
+    emit_syscall(buf);
+    
+    // Print terminal digits
+    emit_pop_reg(buf, RAX);
+    emit_push_reg(buf, RAX);
+    
+    // movzx rcx, word [rax]  ; known_len
+    emit_byte(buf, 0x48);
+    emit_byte(buf, 0x0F);
+    emit_byte(buf, 0xB7);
+    emit_byte(buf, 0x08);
+    
+    // movzx rdx, word [rax + 2]  ; terminal_len
+    emit_byte(buf, 0x48);
+    emit_byte(buf, 0x0F);
+    emit_byte(buf, 0xB7);
+    emit_byte(buf, 0x50);
+    emit_byte(buf, 0x02);
+    
+    // lea rsi, [rax + rcx + 16]  ; Point to terminal digits
+    emit_lea(buf, RSI, RAX, 16);
+    emit_add_reg_reg(buf, RSI, RCX);
+    
+    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
+    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
+    emit_syscall(buf);
+    
+    // no_terminals:
+    emit_pop_reg(buf, RAX);
+    
+    // Print newline
+    emit_byte(buf, 0xEB);  // jmp over newline
+    emit_byte(buf, 0x01);
+    emit_byte(buf, '\n');
+    
+    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
+    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
+    emit_lea(buf, RSI, RIP, -9);      // Point to newline
+    emit_mov_reg_imm64(buf, RDX, 1);  // length 1
+    emit_syscall(buf);
+    
+    // Restore solid pointer
+    emit_pop_reg(buf, RAX);
 }

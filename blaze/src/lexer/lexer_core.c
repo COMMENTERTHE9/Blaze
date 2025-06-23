@@ -503,6 +503,26 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     
                     tok->len = pos - var_start;
                 }
+                else if (pos + 6 <= len && input[pos + 4] == 'd' && input[pos + 5] == '-') {
+                    // This is var.d- pattern (solid number)
+                    tok->type = TOK_VAR_SOLID;
+                    uint32_t var_start = pos;
+                    pos += 6; // Skip "var.d-"
+                    
+                    // Parse variable name
+                    while (pos < len && (char_types[(unsigned char)input[pos]] == CHAR_ALPHA || 
+                                        char_types[(unsigned char)input[pos]] == CHAR_DIGIT ||
+                                        input[pos] == '_')) {
+                        pos++;
+                    }
+                    
+                    // Include trailing dash if present
+                    if (pos < len && input[pos] == '-') {
+                        pos++;
+                    }
+                    
+                    tok->len = pos - var_start;
+                }
                 else {
                     // This is var.name- pattern (simplified syntax)
                     uint32_t var_start = pos;
@@ -767,6 +787,30 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     // Long suffix - only for regular numbers
                     if (pos < len && (input[pos] == 'L' || input[pos] == 'l')) {
                         pos++;
+                    }
+                    
+                    // Check for exact solid number suffix '!'
+                    if (pos < len && input[pos] == '!') {
+                        print_str("[LEXER] Found exact solid suffix '!' at pos ");
+                        print_num(pos);
+                        print_str("\n");
+                        tok->type = TOK_SOLID_NUMBER;
+                        pos++;
+                        tok->len = pos - tok->start;  // Update length after suffix
+                    }
+                    // Check for quantum solid number suffix '~'
+                    else if (pos < len && input[pos] == '~') {
+                        print_str("[LEXER] Found quantum solid suffix '~' at pos ");
+                        print_num(pos);
+                        print_str("\n");
+                        tok->type = TOK_SOLID_NUMBER;
+                        pos++;
+                        
+                        // Optional: parse terminal digits after ~
+                        while (pos < len && char_types[(unsigned char)input[pos]] == CHAR_DIGIT) {
+                            pos++;
+                        }
+                        tok->len = pos - tok->start;  // Update length after suffix and terminals
                     }
                 }
             }

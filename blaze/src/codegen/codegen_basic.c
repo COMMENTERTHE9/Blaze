@@ -57,6 +57,7 @@ extern void generate_print_float_safe(CodeBuffer* buf);
 // Variable type definitions from codegen_vars.c
 #define VAR_TYPE_INT    0
 #define VAR_TYPE_FLOAT  1
+#define VAR_TYPE_SOLID  4
 #define VAR_TYPE_STRING 2
 #define VAR_TYPE_BOOL   3
 
@@ -239,6 +240,7 @@ void generate_print_number(CodeBuffer* buf, X64Register num_reg) {
 
 // Variable type definitions (matching codegen_vars.c)
 #define VAR_TYPE_FLOAT  1
+#define VAR_TYPE_SOLID  4
 
 // Forward declarations for variable functions
 extern bool is_var_float(const char* name);
@@ -1101,6 +1103,13 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                         generate_expression(buf, nodes, content_idx, symbols, string_pool);
                         // Print the float from XMM0
                         generate_print_float(buf);
+                    } else if (var && var->var_type == VAR_TYPE_SOLID) {
+                        print_str("[OUTPUT] Variable is solid type, calling generate_print_solid\n");
+                        // Generate identifier - will load solid pointer into RAX
+                        generate_expression(buf, nodes, content_idx, symbols, string_pool);
+                        // Print the solid number from RAX
+                        extern void generate_print_solid(CodeBuffer* buf);
+                        generate_print_solid(buf);
                     } else {
                         // Generate identifier - will load int into RAX
                         generate_expression(buf, nodes, content_idx, symbols, string_pool);
