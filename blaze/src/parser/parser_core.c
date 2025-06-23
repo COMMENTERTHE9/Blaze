@@ -373,7 +373,13 @@ static uint16_t parse_solid_number(Parser* p) {
     
     // Parse known digits (before first ...)
     uint32_t known_start = pos;
-    while (pos < len && input[pos] != '.' && input[pos] != '!') {
+    bool found_decimal = false;
+    while (pos < len && input[pos] != '!' && 
+           !(pos + 2 < len && input[pos] == '.' && input[pos+1] == '.' && input[pos+2] == '.')) {
+        if (input[pos] == '.' && !found_decimal) {
+            // Allow one decimal point
+            found_decimal = true;
+        }
         pos++;
     }
     uint32_t known_len = pos - known_start;
@@ -396,7 +402,21 @@ static uint16_t parse_solid_number(Parser* p) {
     // Skip first "..."
     if (pos + 2 < len && input[pos] == '.' && input[pos+1] == '.' && input[pos+2] == '.') {
         pos += 3;
+    } else {
+        // No ellipsis means this is just a plain number, treat as exact
+        p->nodes[node].data.solid.barrier_type = 'x';
+        p->nodes[node].data.solid.gap_magnitude = 0;
+        p->nodes[node].data.solid.confidence_x1000 = 1000;
+        p->nodes[node].data.solid.terminal_len = 0;
+        p->nodes[node].data.solid.terminal_offset = 0;
+        p->nodes[node].data.solid.terminal_type = 0;
+        return node;
     }
+    
+    // Set defaults for barrier spec
+    p->nodes[node].data.solid.barrier_type = 'q';  // Default to quantum
+    p->nodes[node].data.solid.gap_magnitude = 0xFFFFFFFFFFFFFFFFULL;  // Default large gap
+    p->nodes[node].data.solid.confidence_x1000 = 850;  // Default 85%
     
     // Parse barrier spec in (...)
     if (pos < len && input[pos] == '(') {
@@ -439,15 +459,60 @@ static uint16_t parse_solid_number(Parser* p) {
                 if (pos + 2 < len && input[pos] == '1' && input[pos+1] == '0') {
                     // Parse 10^n format
                     pos += 2;
+                    uint32_t exp = 0;
+                    
                     if (pos < len && input[pos] == '^') {
                         pos++;
-                        // Parse exponent
-                        uint32_t exp = 0;
+                        // Parse regular exponent
                         while (pos < len && input[pos] >= '0' && input[pos] <= '9') {
                             exp = exp * 10 + (input[pos] - '0');
                             pos++;
                         }
-                        // Calculate 10^exp (simplified - in real implementation use proper method)
+                    } else {
+                        // Parse superscript digits (UTF-8)
+                        while (pos + 2 < len && (unsigned char)input[pos] == 0xC2) {
+                            unsigned char b2 = (unsigned char)input[pos+1];
+                            if (b2 >= 0xB0 && b2 <= 0xB9) {
+                                // Superscript 0-9 (U+2070-U+2079)
+                                exp = exp * 10 + (b2 == 0xB0 ? 0 : b2 - 0xB0);
+                                pos += 2;
+                            } else {
+                                break;
+                            }
+                        }
+                        // Also check for ³ (U+00B3) and other common superscripts
+                        while (pos + 1 < len && (unsigned char)input[pos] == 0xC2) {
+                            unsigned char b2 = (unsigned char)input[pos+1];
+                            if (b2 == 0xB2) { // ²
+                                exp = exp * 10 + 2;
+                                pos += 2;
+                            } else if (b2 == 0xB3) { // ³
+                                exp = exp * 10 + 3;
+                                pos += 2;
+                            } else if (b2 == 0xB9) { // ¹
+                                exp = exp * 10 + 1;
+                                pos += 2;
+                            } else {
+                                break;
+                            }
+                        }
+                        // Check for ⁴-⁹ (U+2074-U+2079)
+                        while (pos + 2 < len && (unsigned char)input[pos] == 0xE2 && 
+                               (unsigned char)input[pos+1] == 0x81) {
+                            unsigned char b3 = (unsigned char)input[pos+2];
+                            if (b3 >= 0xB4 && b3 <= 0xB9) {
+                                exp = exp * 10 + (b3 - 0xB0);
+                                pos += 3;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Calculate 10^exp (limit to prevent overflow)
+                    if (exp > 38) {
+                        gap = ~0ULL; // Max value for very large exponents
+                    } else {
                         gap = 1;
                         for (uint32_t i = 0; i < exp; i++) {
                             gap *= 10;
@@ -1302,26 +1367,146 @@ static uint16_t parse_var_def(Parser* p) {
                     p->nodes[solid_node].data.solid.terminal_offset = terminal_offset;
                     p->nodes[solid_node].data.solid.terminal_type = terminal_len > 0 ? 0 : 2;
                 } else {
-                    // Simple solid number without special syntax
-                    uint32_t known_offset = p->string_pos;
-                    if (p->string_pos + str_len + 1 > 4096) {
-                        p->has_error = true;
-                        return 0;
+                    // Check if this is long format (contains "...")
+                    bool has_ellipsis = false;
+                    for (uint32_t i = 0; i + 2 < str_len; i++) {
+                        if (str_content[i] == '.' && str_content[i+1] == '.' && str_content[i+2] == '.') {
+                            has_ellipsis = true;
+                            break;
+                        }
                     }
                     
-                    for (uint32_t i = 0; i < str_len; i++) {
-                        p->string_pool[p->string_pos++] = str_content[i];
+                    if (has_ellipsis) {
+                        // Parse long format solid number
+                        // This is essentially the same logic as parse_solid_number but for string content
+                        uint32_t spos = 0;
+                        
+                        // Parse known digits (before first ...)
+                        uint32_t known_start = spos;
+                        bool found_decimal = false;
+                        while (spos < str_len && 
+                               !(spos + 2 < str_len && str_content[spos] == '.' && 
+                                 str_content[spos+1] == '.' && str_content[spos+2] == '.')) {
+                            if (str_content[spos] == '.' && !found_decimal) {
+                                found_decimal = true;
+                            }
+                            spos++;
+                        }
+                        uint32_t known_len = spos - known_start;
+                        
+                        // Store known digits
+                        uint32_t known_offset = p->string_pos;
+                        if (p->string_pos + known_len + 1 > 4096) {
+                            p->has_error = true;
+                            return 0;
+                        }
+                        
+                        for (uint32_t i = 0; i < known_len; i++) {
+                            p->string_pool[p->string_pos++] = str_content[known_start + i];
+                        }
+                        p->string_pool[p->string_pos++] = '\0';
+                        
+                        p->nodes[solid_node].data.solid.known_offset = known_offset;
+                        p->nodes[solid_node].data.solid.known_len = known_len;
+                        
+                        // Skip first "..."
+                        if (spos + 2 < str_len && str_content[spos] == '.' && 
+                            str_content[spos+1] == '.' && str_content[spos+2] == '.') {
+                            spos += 3;
+                        }
+                        
+                        // Set defaults
+                        p->nodes[solid_node].data.solid.barrier_type = 'q';
+                        p->nodes[solid_node].data.solid.gap_magnitude = 0xFFFFFFFFFFFFFFFFULL;
+                        p->nodes[solid_node].data.solid.confidence_x1000 = 850;
+                        
+                        // Parse barrier spec in (...)
+                        if (spos < str_len && str_content[spos] == '(') {
+                            spos++; // skip '('
+                            
+                            // Check for "exact"
+                            if (spos + 5 <= str_len && str_content[spos] == 'e' && 
+                                str_content[spos+1] == 'x' && str_content[spos+2] == 'a' && 
+                                str_content[spos+3] == 'c' && str_content[spos+4] == 't') {
+                                p->nodes[solid_node].data.solid.barrier_type = 'x';
+                                p->nodes[solid_node].data.solid.gap_magnitude = 0;
+                                p->nodes[solid_node].data.solid.confidence_x1000 = 1000;
+                                spos += 5;
+                            } else {
+                                // Parse barrier type
+                                if (spos < str_len) {
+                                    char barrier = str_content[spos];
+                                    if (barrier == 'q' || barrier == 'e' || barrier == 's' || 
+                                        barrier == 't' || barrier == 'c' || barrier == 'u') {
+                                        p->nodes[solid_node].data.solid.barrier_type = barrier;
+                                        spos++;
+                                    }
+                                }
+                                
+                                // TODO: Parse gap magnitude and confidence
+                                // For now, skip to closing ')'
+                                while (spos < str_len && str_content[spos] != ')') {
+                                    spos++;
+                                }
+                            }
+                            
+                            // Skip closing ')'
+                            if (spos < str_len && str_content[spos] == ')') {
+                                spos++;
+                            }
+                        }
+                        
+                        // Skip second "..."
+                        if (spos + 2 < str_len && str_content[spos] == '.' && 
+                            str_content[spos+1] == '.' && str_content[spos+2] == '.') {
+                            spos += 3;
+                        }
+                        
+                        // Parse terminal digits
+                        if (spos < str_len) {
+                            uint32_t terminal_len = str_len - spos;
+                            uint32_t terminal_offset = p->string_pos;
+                            
+                            if (p->string_pos + terminal_len + 1 > 4096) {
+                                p->has_error = true;
+                                return 0;
+                            }
+                            
+                            for (uint32_t i = 0; i < terminal_len; i++) {
+                                p->string_pool[p->string_pos++] = str_content[spos + i];
+                            }
+                            p->string_pool[p->string_pos++] = '\0';
+                            
+                            p->nodes[solid_node].data.solid.terminal_len = terminal_len;
+                            p->nodes[solid_node].data.solid.terminal_offset = terminal_offset;
+                            p->nodes[solid_node].data.solid.terminal_type = 0;
+                        } else {
+                            p->nodes[solid_node].data.solid.terminal_len = 0;
+                            p->nodes[solid_node].data.solid.terminal_offset = 0;
+                            p->nodes[solid_node].data.solid.terminal_type = 0;
+                        }
+                    } else {
+                        // Simple solid number without special syntax
+                        uint32_t known_offset = p->string_pos;
+                        if (p->string_pos + str_len + 1 > 4096) {
+                            p->has_error = true;
+                            return 0;
+                        }
+                        
+                        for (uint32_t i = 0; i < str_len; i++) {
+                            p->string_pool[p->string_pos++] = str_content[i];
+                        }
+                        p->string_pool[p->string_pos++] = '\0';
+                        
+                        p->nodes[solid_node].data.solid.known_offset = known_offset;
+                        p->nodes[solid_node].data.solid.known_len = str_len;
+                        p->nodes[solid_node].data.solid.barrier_type = 'x';
+                        p->nodes[solid_node].data.solid.gap_magnitude = 0;
+                        p->nodes[solid_node].data.solid.confidence_x1000 = 1000;
+                        p->nodes[solid_node].data.solid.terminal_len = 0;
+                        p->nodes[solid_node].data.solid.terminal_offset = 0;
+                        p->nodes[solid_node].data.solid.terminal_type = 0;
                     }
-                    p->string_pool[p->string_pos++] = '\0';
-                    
-                    p->nodes[solid_node].data.solid.known_offset = known_offset;
-                    p->nodes[solid_node].data.solid.known_len = str_len;
-                    p->nodes[solid_node].data.solid.barrier_type = 'x';
-                    p->nodes[solid_node].data.solid.gap_magnitude = 0;
-                    p->nodes[solid_node].data.solid.confidence_x1000 = 1000;
-                    p->nodes[solid_node].data.solid.terminal_len = str_len;
-                    p->nodes[solid_node].data.solid.terminal_offset = known_offset;
-                    p->nodes[solid_node].data.solid.terminal_type = 0;
                 }
                 
                 init_expr = solid_node;

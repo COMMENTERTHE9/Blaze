@@ -1,0 +1,7 @@
+var.d-exact-["2.71828...(exact)"]
+var.d-quantum-["3.14159...(q)...26535"]
+var.d-energy-["1.23...(e)...456"]
+
+print/ exact
+print/ quantum
+print/ energy

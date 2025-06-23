@@ -111,17 +111,18 @@ static VarEntry* get_or_create_var_typed(const char* name, uint8_t type) {
 
 // Initialize variable storage at function entry
 void generate_var_storage_init(CodeBuffer* buf) {
-    // RBP is pushed by runtime init, but we need to set it up as frame pointer
-    emit_mov_reg_reg(buf, RBP, RSP);
-    
+    // RBP is already set up by runtime init, so we just need to allocate space
     // Reserve space for variables (256 bytes for 32 variables)
     emit_sub_reg_imm32(buf, RSP, 256);
 }
 
 // Clean up variable storage at function exit
 void generate_var_storage_cleanup(CodeBuffer* buf) {
-    // Just restore stack pointer by adding back the space we allocated
-    emit_add_reg_imm32(buf, RSP, 256);
+    print_str("[VAR_CLEANUP] Restoring stack frame\n");
+    // Restore stack frame properly
+    // Note: We don't need to explicitly add 256 to RSP because mov rsp, rbp does it
+    emit_mov_reg_reg(buf, RSP, RBP);   // mov rsp, rbp - restore stack pointer
+    emit_pop_reg(buf, RBP);            // pop rbp - restore base pointer
 }
 
 // Generate code to store a value in a variable

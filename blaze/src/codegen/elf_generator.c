@@ -147,24 +147,21 @@ void generate_elf_executable(uint8_t* machine_code, uint32_t code_size,
     }
     
     // 4. Add exit syscall if not present
-    // mov rax, 60  ; exit syscall
-    // xor rdi, rdi ; exit code 0
-    // syscall
     if (code_size < 10 || machine_code[code_size-2] != 0x0F || 
         machine_code[code_size-1] != 0x05) {
-        elf_buffer[offset + code_size] = 0x48;
-        elf_buffer[offset + code_size + 1] = 0xC7;
-        elf_buffer[offset + code_size + 2] = 0xC0;
-        elf_buffer[offset + code_size + 3] = 0x3C;
+        // mov rax, 60  ; exit syscall
+        elf_buffer[offset + code_size] = 0xB8;
+        elf_buffer[offset + code_size + 1] = 0x3C;
+        elf_buffer[offset + code_size + 2] = 0x00;
+        elf_buffer[offset + code_size + 3] = 0x00;
         elf_buffer[offset + code_size + 4] = 0x00;
-        elf_buffer[offset + code_size + 5] = 0x00;
-        elf_buffer[offset + code_size + 6] = 0x00;
-        elf_buffer[offset + code_size + 7] = 0x48;
-        elf_buffer[offset + code_size + 8] = 0x31;
-        elf_buffer[offset + code_size + 9] = 0xFF;
-        elf_buffer[offset + code_size + 10] = 0x0F;
-        elf_buffer[offset + code_size + 11] = 0x05;
-        file_size += 12;
+        // xor edi, edi (32-bit xor to save space)
+        elf_buffer[offset + code_size + 5] = 0x31;
+        elf_buffer[offset + code_size + 6] = 0xFF;
+        // syscall
+        elf_buffer[offset + code_size + 7] = 0x0F;
+        elf_buffer[offset + code_size + 8] = 0x05;
+        file_size += 9;
     }
     
     // 5. Write to file using direct syscalls

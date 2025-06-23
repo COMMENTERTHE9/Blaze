@@ -247,6 +247,10 @@ int main(int argc, char** argv) {
     // Initialize runtime with minimal setup
     generate_runtime_init_minimal(&code_buf);
     
+    // Initialize variable storage
+    extern void generate_var_storage_init(CodeBuffer* buf);
+    generate_var_storage_init(&code_buf);
+    
     // Generate code
     generate_statement(&code_buf, nodes, root_idx, &symbols, string_pool);
     
@@ -255,6 +259,10 @@ int main(int argc, char** argv) {
         print_str("[ERROR] Code generation failed - buffer overflow!\n");
         return 1;
     }
+    
+    // Clean up variable storage before exit
+    extern void generate_var_storage_cleanup(CodeBuffer* buf);
+    generate_var_storage_cleanup(&code_buf);
     
     // Exit cleanly
     emit_platform_exit(&code_buf, PLATFORM_LINUX, 0);

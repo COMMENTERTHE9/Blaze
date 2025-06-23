@@ -17,5 +17,4 @@ void generate_runtime_init_minimal(CodeBuffer* buf) {
     
     emit_push_reg(buf, RBP);           // push rbp
     emit_mov_reg_reg(buf, RBP, RSP);   // mov rbp, rsp - SET UP FRAME POINTER!
-    emit_sub_reg_imm32(buf, RSP, 8);   // align stack to 16 bytes
 }
