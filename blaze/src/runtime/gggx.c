@@ -9,6 +9,15 @@
 double log(double x);
 int sprintf(char* buf, const char* fmt, ...);
 
+// Include pattern analysis functions
+#include "gggx_patterns.c"
+
+// Include computational trace functions  
+#include "gggx_trace.c"
+
+// Include terminal digit analysis
+#include "gggx_terminals.c"
+
 // Mathematical constants for detection
 typedef struct {
     const char* name;
@@ -130,16 +139,19 @@ bool gggx_go_phase(GGGXResult* result, double value) {
     // Count total significant digits
     result->significant_digits = int_digits + frac_digits;
     
-    // Check for repeating patterns
-    uint32_t period, start;
-    result->has_pattern = gggx_detect_repeating_pattern(buffer, len, &period, &start);
-    if (result->has_pattern) {
-        result->pattern_period = period;
-        print_str("[GGGX-GO] Detected repeating pattern with period ");
-        print_num(period);
-        print_str(" starting at position ");
-        print_num(start);
+    // Use advanced pattern detection
+    PatternAnalysis* pattern = analyze_patterns(buffer, len, value);
+    if (pattern && pattern->type != PATTERN_NONE) {
+        result->has_pattern = true;
+        result->pattern_period = pattern->period;
+        print_str("[GGGX-GO] Detected ");
+        print_str(pattern_type_name(pattern->type));
+        print_str(" pattern: ");
+        print_str(pattern->pattern_desc);
         print_str("\n");
+    } else {
+        result->has_pattern = false;
+        result->pattern_period = 0;
     }
     
     // Check if it's a known mathematical constant
@@ -163,16 +175,9 @@ bool gggx_get_phase(GGGXResult* result) {
         return false;
     }
     
-    // Simulate computational trace for the value
+    // Use advanced computational trace generation
     ComputationalTrace* trace = &result->trace;
-    
-    // Estimate based on the number representation
-    double abs_value = result->input_value < 0 ? -result->input_value : result->input_value;
-    
-    // Basic operations count
-    trace->instruction_count = 10; // Base overhead
-    trace->memory_accesses = 2;    // Load/store
-    trace->branch_count = 1;       // Sign check
+    generate_computational_trace(trace, result->input_value, result->desired_precision);
     
     // Check if it's a simple fraction (like 22/7)
     bool is_fraction = false;
@@ -308,11 +313,10 @@ bool gggx_glimpse_phase(GGGXResult* result) {
         return false;
     }
     
-    // Infer barrier type from computational trace
+    // Use advanced barrier detection from trace
     BarrierDetection* barrier = &result->barrier;
-    
-    // Default to computational barrier
-    barrier->detected_barrier = BARRIER_COMPUTATIONAL;
+    barrier->detected_barrier = infer_barrier_from_trace(&result->trace, result->input_value, 
+                                                        result->desired_precision);
     barrier->confidence_score = 0.8;
     
     // Quantum operations suggest quantum barrier
@@ -431,20 +435,26 @@ bool gggx_guess_phase(GGGXResult* result) {
         }
     }
     
-    // Create terminal digits if pattern exists
+    // Use advanced terminal digit extraction
+    TerminalAnalysis* terminals = extract_terminal_digits(result->input_value,
+                                                         result->barrier.detected_barrier,
+                                                         result->barrier.barrier_magnitude);
+    
     char terminal_digits[16];
     uint16_t terminal_len = 0;
     TerminalType terminal_type = TERMINAL_DIGITS;
     
-    if (result->has_terminal_pattern && result->pattern_period > 0) {
-        // Extract pattern for terminal
-        // For simplicity, just use repeating digits
-        for (uint16_t i = 0; i < result->pattern_period && i < 10; i++) {
-            terminal_digits[terminal_len++] = '0' + (i % 10);
+    if (terminals && terminals->length > 0) {
+        // Copy extracted terminals
+        terminal_len = terminals->length;
+        for (uint16_t i = 0; i < terminal_len && i < 16; i++) {
+            terminal_digits[i] = terminals->digits[i];
         }
-    } else if (result->barrier.detected_barrier == BARRIER_QUANTUM) {
-        // Quantum barriers often lead to superposition
-        terminal_type = TERMINAL_SUPERPOSITION;
+        terminal_type = terminals->type;
+        
+        // Analyze terminal statistics for better confidence
+        analyze_terminal_statistics(terminals);
+        result->precision_confidence *= terminals->stability;
     }
     
     // Create the solid number

@@ -1,11 +1,13 @@
-// GGGX ALGORITHM FOR SOLID NUMBERS
-// Go, Get, Gap, Glimpse, Guess - The core computational engine
+// GGGX ALGORITHM - UNIVERSAL COMPUTATIONAL FEASIBILITY PREDICTOR
+// Go, Get, Gap, Glimpse, Guess - The oracle for computational tractability
+// This header connects both universal GGGX and its solid numbers application
 
 #ifndef GGGX_H
 #define GGGX_H
 
 #include "blaze_types.h"
 #include "solid_runtime.h"
+#include "gggx_universal.h"  // Universal GGGX framework
 
 // GGGX phase identifiers
 typedef enum {
@@ -90,5 +92,23 @@ bool gggx_detect_mathematical_constant(double value, const char** name_out);
 // Computational analysis
 uint32_t gggx_estimate_computation_cost(double value, uint32_t precision);
 BarrierType gggx_infer_barrier_type(ComputationalTrace* trace, double value);
+
+// Pattern analysis (from gggx_patterns.c)
+typedef struct PatternAnalysis PatternAnalysis;
+PatternAnalysis* analyze_patterns(const char* digits, uint32_t len, double value);
+const char* pattern_type_name(int type);
+
+// Computational trace analysis (from gggx_trace.c)
+void generate_computational_trace(ComputationalTrace* trace, double value, uint32_t precision);
+BarrierType infer_barrier_from_trace(ComputationalTrace* trace, double value, uint32_t precision);
+
+// Terminal digit analysis (from gggx_terminals.c)
+typedef struct TerminalAnalysis TerminalAnalysis;
+TerminalAnalysis* extract_terminal_digits(double value, BarrierType barrier, uint64_t gap_magnitude);
+void analyze_terminal_statistics(TerminalAnalysis* terminals);
+
+// Bridge between universal GGGX and solid numbers
+GGGXResult* gggx_analyze_for_solid(double value, uint32_t desired_precision);
+SolidNumber* gggx_to_solid_number(GGGXAnalysis* analysis, double value);
 
 #endif // GGGX_H
