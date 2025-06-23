@@ -260,12 +260,16 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    // Clean up variable storage before exit
-    extern void generate_var_storage_cleanup(CodeBuffer* buf);
-    generate_var_storage_cleanup(&code_buf);
+    // Don't clean up variable storage at top level - we're not in a function
+    // extern void generate_var_storage_cleanup(CodeBuffer* buf);
+    // generate_var_storage_cleanup(&code_buf);
+    
+    print_str("[MAIN] About to emit platform exit\n");
     
     // Exit cleanly
     emit_platform_exit(&code_buf, PLATFORM_LINUX, 0);
+    
+    print_str("[MAIN] Platform exit emitted\n");
     
     // Final error check
     if (code_buf.has_error) {

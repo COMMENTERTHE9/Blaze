@@ -53,6 +53,7 @@ typedef struct {
 static VarEntry var_table[MAX_VARS];
 static uint32_t var_count = 0;
 static int32_t next_stack_offset = -8;  // Start after saved RBP
+static bool frame_setup = false;  // Track if we've set up the stack frame
 
 // Simple hash function for variable names
 static uint32_t hash_string(const char* str) {
@@ -62,6 +63,19 @@ static uint32_t hash_string(const char* str) {
         str++;
     }
     return hash;
+}
+
+// Ensure stack frame is set up for variables
+static void ensure_frame_setup(CodeBuffer* buf) {
+    if (!frame_setup) {
+        print_str("[VAR] Setting up stack frame on first variable use\n");
+        // Set up a frame for variables
+        emit_push_reg(buf, RBP);
+        emit_mov_reg_reg(buf, RBP, RSP);
+        // Reserve space for variables (256 bytes for 32 variables)
+        emit_sub_reg_imm32(buf, RSP, 256);
+        frame_setup = true;
+    }
 }
 
 // Find or allocate a variable slot
@@ -111,18 +125,20 @@ static VarEntry* get_or_create_var_typed(const char* name, uint8_t type) {
 
 // Initialize variable storage at function entry
 void generate_var_storage_init(CodeBuffer* buf) {
-    // RBP is already set up by runtime init, so we just need to allocate space
-    // Reserve space for variables (256 bytes for 32 variables)
-    emit_sub_reg_imm32(buf, RSP, 256);
+    // Don't emit anything - we'll set up the frame on first variable use
+    // This avoids stack corruption for programs with no variables
 }
 
 // Clean up variable storage at function exit
 void generate_var_storage_cleanup(CodeBuffer* buf) {
-    print_str("[VAR_CLEANUP] Restoring stack frame\n");
-    // Restore stack frame properly
-    // Note: We don't need to explicitly add 256 to RSP because mov rsp, rbp does it
-    emit_mov_reg_reg(buf, RSP, RBP);   // mov rsp, rbp - restore stack pointer
-    emit_pop_reg(buf, RBP);            // pop rbp - restore base pointer
+    // Only clean up if we set up a frame
+    if (frame_setup) {
+        print_str("[VAR_CLEANUP] Restoring stack frame\n");
+        // Restore stack frame properly
+        // Note: We don't need to explicitly add 256 to RSP because mov rsp, rbp does it
+        emit_mov_reg_reg(buf, RSP, RBP);   // mov rsp, rbp - restore stack pointer
+        emit_pop_reg(buf, RBP);            // pop rbp - restore base pointer
+    }
 }
 
 // Generate code to store a value in a variable
@@ -132,6 +148,9 @@ void generate_var_store(CodeBuffer* buf, const char* var_name, X64Register value
     print_str("' from register ");
     print_num(value_reg);
     print_str("\n");
+    
+    // Ensure frame is set up before any variable operations
+    ensure_frame_setup(buf);
     
     VarEntry* var = get_or_create_var(var_name);
     if (!var) return;  // Error: too many variables
@@ -152,6 +171,9 @@ void generate_var_load(CodeBuffer* buf, const char* var_name, X64Register dest_r
     print_str("' to register ");
     print_num(dest_reg);
     print_str("\n");
+    
+    // Ensure frame is set up before any variable operations
+    ensure_frame_setup(buf);
     
     VarEntry* var = get_or_create_var(var_name);
     if (!var) {
@@ -176,6 +198,9 @@ void generate_var_store_float(CodeBuffer* buf, const char* var_name) {
     print_str("[VAR_STORE_FLOAT] Storing float variable '");
     print_str(var_name);
     print_str("' from XMM0\n");
+    
+    // Ensure frame is set up before any variable operations
+    ensure_frame_setup(buf);
     
     VarEntry* var = get_or_create_var(var_name);
     if (!var) {
@@ -218,6 +243,9 @@ void generate_var_load_float(CodeBuffer* buf, const char* var_name) {
     print_str("[VAR_LOAD_FLOAT] Loading float variable '");
     print_str(var_name);
     print_str("' to XMM0\n");
+    
+    // Ensure frame is set up before any variable operations
+    ensure_frame_setup(buf);
     
     VarEntry* var = get_or_create_var(var_name);
     if (!var || !var->is_initialized) {
@@ -540,6 +568,7 @@ void generate_identifier(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
 void reset_var_table(void) {
     var_count = 0;
     next_stack_offset = -8;
+    frame_setup = false;
 }
 
 // Check if a variable is a float type
@@ -552,4 +581,9 @@ bool is_var_float(const char* name) {
 bool is_var_solid(const char* name) {
     VarEntry* var = get_or_create_var(name);
     return var && var->var_type == VAR_TYPE_SOLID;
+}
+
+// Check if any variables have been used
+bool has_variables(void) {
+    return var_count > 0;
 }

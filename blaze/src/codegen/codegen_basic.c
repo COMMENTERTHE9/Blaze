@@ -989,9 +989,6 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
             print_num(content_node->type);
             print_str("\n");
             
-            // Debug: Save node type in RAX for error reporting
-            emit_mov_reg_imm64(buf, RAX, content_node->type);
-            
             if (content_node->type == NODE_NUMBER) {
                 // Print the number
                 char num_buf[32];
@@ -1110,6 +1107,7 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                         // Print the solid number from RAX
                         extern void generate_print_solid(CodeBuffer* buf);
                         generate_print_solid(buf);
+                        print_str("[OUTPUT] After generate_print_solid for variable\n");
                     } else {
                         // Generate identifier - will load int into RAX
                         generate_expression(buf, nodes, content_idx, symbols, string_pool);
@@ -1141,8 +1139,9 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                 // Unsupported content type - print debug info
                 const char* msg = "Unsupported print type: ";
                 generate_print(buf, msg, 24);
-                // Print the node type as a number
-                generate_print_number(buf, RAX);  // RAX should still have node type
+                // Load and print the node type as a number
+                emit_mov_reg_imm64(buf, RAX, content_node->type);
+                generate_print_number(buf, RAX);
                 // Add newline
                 generate_print(buf, "\n", 1);
             }

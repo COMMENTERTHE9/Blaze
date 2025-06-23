@@ -39,6 +39,13 @@ static const SyscallNumbers windows_syscalls = {
 void emit_platform_exit(CodeBuffer* buf, Platform platform, int exit_code) {
     switch (platform) {
         case PLATFORM_LINUX:
+            // Ensure stack is 16-byte aligned for exit syscall
+            // and rsp, -16
+            emit_byte(buf, 0x48);
+            emit_byte(buf, 0x83);
+            emit_byte(buf, 0xE4);
+            emit_byte(buf, 0xF0);
+            
             // Linux x64 exit syscall
             emit_mov_reg_imm64(buf, RAX, 60);        // sys_exit
             emit_mov_reg_imm64(buf, RDI, exit_code); // exit code

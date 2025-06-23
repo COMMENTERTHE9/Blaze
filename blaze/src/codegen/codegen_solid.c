@@ -439,4 +439,6 @@ void generate_print_solid(CodeBuffer* buf) {
     
     // Restore solid pointer
     emit_pop_reg(buf, RAX);
+    
+    print_str("[SOLID] print_solid completed, RAX should have solid pointer\n");
 }
