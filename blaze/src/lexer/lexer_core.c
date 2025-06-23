@@ -605,7 +605,9 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     print_num(pos);
                     print_str("\n");
                     tok->type = TOK_SOLID_NUMBER;
+                    uint32_t solid_start = tok->start;
                     pos += 3; // Skip "..."
+                    bool is_valid = true;
                     
                     // Expect '(' for barrier spec
                     if (pos < len && input[pos] == '(') {
@@ -627,10 +629,15 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                             } else if (pos + 3 <= len && str_equals(&input[pos], "inf", 3)) {
                                 // ASCII alternative for infinity
                                 pos += 3;
+                            } else {
+                                print_str("[LEXER ERROR] Invalid barrier type in solid number at pos ");
+                                print_num(pos);
+                                print_str("\n");
+                                is_valid = false;
                             }
                             
                             // Expect ':'
-                            if (pos < len && input[pos] == ':') {
+                            if (is_valid && pos < len && input[pos] == ':') {
                                 pos++;
                                 
                                 // Parse gap magnitude (10^n or ∞)
@@ -656,6 +663,11 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                                 } else if (pos + 3 <= len && str_equals(&input[pos], "inf", 3)) {
                                     // ASCII infinity
                                     pos += 3;
+                                } else {
+                                    print_str("[LEXER ERROR] Invalid gap magnitude in solid number at pos ");
+                                    print_num(pos);
+                                    print_str("\n");
+                                    is_valid = false;
                                 }
                                 
                                 // Optional confidence: |0.85
@@ -667,17 +679,32 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                                         pos++;
                                     }
                                 }
+                            } else if (is_valid) {
+                                print_str("[LEXER ERROR] Expected ':' after barrier type at pos ");
+                                print_num(pos);
+                                print_str("\n");
+                                is_valid = false;
                             }
                         }
                         
                         // Expect ')'
                         if (pos < len && input[pos] == ')') {
                             pos++;
+                        } else if (is_valid) {
+                            print_str("[LEXER ERROR] Expected ')' to close barrier spec at pos ");
+                            print_num(pos);
+                            print_str("\n");
+                            is_valid = false;
                         }
+                    } else if (is_valid) {
+                        print_str("[LEXER ERROR] Expected '(' after '...' at pos ");
+                        print_num(pos);
+                        print_str("\n");
+                        is_valid = false;
                     }
                     
                     // Expect second "..."
-                    if (pos + 2 < len && input[pos] == '.' && input[pos + 1] == '.' && input[pos + 2] == '.') {
+                    if (is_valid && pos + 2 < len && input[pos] == '.' && input[pos + 1] == '.' && input[pos + 2] == '.') {
                         pos += 3;
                         
                         // Parse terminal digits or special symbols
@@ -699,6 +726,21 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                                 }
                             }
                         }
+                    } else if (is_valid) {
+                        print_str("[LEXER ERROR] Expected '...' after barrier spec at pos ");
+                        print_num(pos);
+                        print_str("\n");
+                        is_valid = false;
+                    }
+                    
+                    // If invalid, mark as error token
+                    if (!is_valid) {
+                        tok->type = TOK_ERROR;
+                        // Try to consume rest of malformed solid number
+                        while (pos < len && input[pos] != ' ' && input[pos] != '\n' && 
+                               input[pos] != '\t' && input[pos] != '\r') {
+                            pos++;
+                        }
                     }
                     
                     tok->len = pos - tok->start;
@@ -706,6 +748,8 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     print_num(tok->len);
                     print_str(" next pos=");
                     print_num(pos);
+                    print_str(" valid=");
+                    print_str(is_valid ? "true" : "false");
                     print_str("\n");
                     // Skip remaining number parsing for solid numbers
                 } else {
@@ -980,6 +1024,7 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                             // This is a solid number starting with ...
                             tok->type = TOK_SOLID_NUMBER;
                             tok->start = save_pos;
+                            bool is_valid = true;
                             pos++;
                             
                             // Parse barrier spec (same logic as in number parsing)
@@ -996,9 +1041,14 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                                     pos += 3;
                                 } else if (pos + 3 <= len && str_equals(&input[pos], "inf", 3)) {
                                     pos += 3;
+                                } else {
+                                    print_str("[LEXER ERROR] Invalid barrier type in solid number at pos ");
+                                    print_num(pos);
+                                    print_str("\n");
+                                    is_valid = false;
                                 }
                                 
-                                if (pos < len && input[pos] == ':') {
+                                if (is_valid && pos < len && input[pos] == ':') {
                                     pos++;
                                     // Parse gap magnitude
                                     if (pos + 2 < len && input[pos] == '1' && input[pos + 1] == '0') {
@@ -1014,6 +1064,11 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                                         pos += 3;
                                     } else if (pos + 3 <= len && str_equals(&input[pos], "inf", 3)) {
                                         pos += 3;
+                                    } else {
+                                        print_str("[LEXER ERROR] Invalid gap magnitude in solid number at pos ");
+                                        print_num(pos);
+                                        print_str("\n");
+                                        is_valid = false;
                                     }
                                     
                                     if (pos < len && input[pos] == '|') {
@@ -1023,15 +1078,25 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                                             pos++;
                                         }
                                     }
+                                } else if (is_valid) {
+                                    print_str("[LEXER ERROR] Expected ':' after barrier type at pos ");
+                                    print_num(pos);
+                                    print_str("\n");
+                                    is_valid = false;
                                 }
                             }
                             
                             if (pos < len && input[pos] == ')') {
                                 pos++;
+                            } else if (is_valid) {
+                                print_str("[LEXER ERROR] Expected ')' to close barrier spec at pos ");
+                                print_num(pos);
+                                print_str("\n");
+                                is_valid = false;
                             }
                             
                             // Expect second "..."
-                            if (pos + 2 < len && input[pos] == '.' && input[pos + 1] == '.' && input[pos + 2] == '.') {
+                            if (is_valid && pos + 2 < len && input[pos] == '.' && input[pos + 1] == '.' && input[pos + 2] == '.') {
                                 pos += 3;
                                 
                                 // Parse terminal
@@ -1048,6 +1113,21 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                                             pos++;
                                         }
                                     }
+                                }
+                            } else if (is_valid) {
+                                print_str("[LEXER ERROR] Expected '...' after barrier spec at pos ");
+                                print_num(pos);
+                                print_str("\n");
+                                is_valid = false;
+                            }
+                            
+                            // If invalid, mark as error token
+                            if (!is_valid) {
+                                tok->type = TOK_ERROR;
+                                // Try to consume rest of malformed solid number
+                                while (pos < len && input[pos] != ' ' && input[pos] != '\n' && 
+                                       input[pos] != '\t' && input[pos] != '\r') {
+                                    pos++;
                                 }
                             }
                             
