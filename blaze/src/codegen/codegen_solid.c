@@ -311,15 +311,10 @@ void generate_print_solid(CodeBuffer* buf) {
     print_str("[SOLID] Generating print_solid\n");
     
     // RAX contains pointer to solid data structure
-    // Format: known_len(2), terminal_len(2), barrier_type(1), terminal_type(1), 
-    //         confidence(2), gap_magnitude(8), data...
+    // Simplified version - just print the known digits
     
     // Save solid pointer
     emit_push_reg(buf, RAX);
-    
-    // First, print the known digits
-    // Get known_len from [RAX]
-    emit_push_reg(buf, RAX);  // Save pointer
     
     // movzx rdx, word [rax]  ; Load known_len into RDX
     emit_byte(buf, 0x48);
@@ -335,106 +330,6 @@ void generate_print_solid(CodeBuffer* buf) {
     emit_mov_reg_imm64(buf, RDI, 1);  // stdout
     // RSI already points to known digits
     // RDX already has length
-    emit_syscall(buf);
-    
-    emit_pop_reg(buf, RAX);  // Restore pointer
-    
-    // Print "..." if not exact
-    emit_push_reg(buf, RAX);
-    
-    // cmp byte [rax + 4], 'x'  ; Check barrier type
-    emit_byte(buf, 0x80);
-    emit_byte(buf, 0x78);
-    emit_byte(buf, 0x04);
-    emit_byte(buf, 'x');
-    
-    // je skip_ellipsis
-    emit_byte(buf, 0x74);
-    emit_byte(buf, 0x1A);  // Skip if exact
-    
-    // Print "..."
-    emit_byte(buf, 0xEB);  // jmp over string
-    emit_byte(buf, 0x03);
-    emit_byte(buf, '.');
-    emit_byte(buf, '.');
-    emit_byte(buf, '.');
-    
-    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-    emit_lea(buf, RSI, RIP, -10);     // Point to "..."
-    emit_mov_reg_imm64(buf, RDX, 3);  // length 3
-    emit_syscall(buf);
-    
-    // skip_ellipsis:
-    emit_pop_reg(buf, RAX);  // Restore pointer
-    
-    // Check if we have terminal digits
-    emit_push_reg(buf, RAX);
-    
-    // movzx rdx, word [rax + 2]  ; Load terminal_len
-    emit_byte(buf, 0x48);
-    emit_byte(buf, 0x0F);
-    emit_byte(buf, 0xB7);
-    emit_byte(buf, 0x50);
-    emit_byte(buf, 0x02);
-    
-    // test rdx, rdx
-    emit_test_reg_reg(buf, RDX, RDX);
-    
-    // jz no_terminals
-    emit_byte(buf, 0x74);
-    emit_byte(buf, 0x28);  // Skip terminal printing
-    
-    // Print "..."
-    emit_byte(buf, 0xEB);  // jmp over string
-    emit_byte(buf, 0x03);
-    emit_byte(buf, '.');
-    emit_byte(buf, '.');
-    emit_byte(buf, '.');
-    
-    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-    emit_lea(buf, RSI, RIP, -10);     // Point to "..."
-    emit_mov_reg_imm64(buf, RDX, 3);  // length 3
-    emit_syscall(buf);
-    
-    // Print terminal digits
-    emit_pop_reg(buf, RAX);
-    emit_push_reg(buf, RAX);
-    
-    // movzx rcx, word [rax]  ; known_len
-    emit_byte(buf, 0x48);
-    emit_byte(buf, 0x0F);
-    emit_byte(buf, 0xB7);
-    emit_byte(buf, 0x08);
-    
-    // movzx rdx, word [rax + 2]  ; terminal_len
-    emit_byte(buf, 0x48);
-    emit_byte(buf, 0x0F);
-    emit_byte(buf, 0xB7);
-    emit_byte(buf, 0x50);
-    emit_byte(buf, 0x02);
-    
-    // lea rsi, [rax + rcx + 16]  ; Point to terminal digits
-    emit_lea(buf, RSI, RAX, 16);
-    emit_add_reg_reg(buf, RSI, RCX);
-    
-    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-    emit_syscall(buf);
-    
-    // no_terminals:
-    emit_pop_reg(buf, RAX);
-    
-    // Print newline
-    emit_byte(buf, 0xEB);  // jmp over newline
-    emit_byte(buf, 0x01);
-    emit_byte(buf, '\n');
-    
-    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-    emit_lea(buf, RSI, RIP, -9);      // Point to newline
-    emit_mov_reg_imm64(buf, RDX, 1);  // length 1
     emit_syscall(buf);
     
     // Restore solid pointer

@@ -79,26 +79,40 @@ void generate_var_def(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
 
 // Generate code for print operation
 void generate_print(CodeBuffer* buf, const char* message, uint32_t len) {
-    // Store message after a jump
-    emit_byte(buf, 0xeb); // jmp short
-    emit_byte(buf, len);  // skip message bytes
+    // Simple approach: put string inline and use lea with fixed offset
+    // jmp over string
+    emit_byte(buf, 0xEB);
+    emit_byte(buf, len);
     
-    uint32_t msg_start = buf->position;
+    // Remember string position
+    uint32_t string_pos = buf->position;
     
     // Emit message bytes
     for (uint32_t i = 0; i < len; i++) {
         emit_byte(buf, message[i]);
     }
     
+    // Now we know exactly where we are, calculate back to string
+    // lea rsi, [rip - N] where N is how far back the string is
+    emit_byte(buf, 0x48);  // REX.W
+    emit_byte(buf, 0x8D);  // lea
+    emit_byte(buf, 0x35);  // modrm for rsi, [rip+disp32]
+    
+    // We're currently at position buf->position
+    // After these 4 bytes we'll be at buf->position + 4
+    // String is at string_pos
+    // So offset = string_pos - (buf->position + 4)
+    int32_t offset = string_pos - (buf->position + 4);
+    emit_byte(buf, offset & 0xFF);
+    emit_byte(buf, (offset >> 8) & 0xFF);
+    emit_byte(buf, (offset >> 16) & 0xFF);
+    emit_byte(buf, (offset >> 24) & 0xFF);
+    
     // mov rax, 1 (sys_write)
     emit_mov_reg_imm64(buf, RAX, 1);
     
     // mov rdi, 1 (stdout)
     emit_mov_reg_imm64(buf, RDI, 1);
-    
-    // lea rsi, [rip - offset] (message address)
-    int32_t offset = -(buf->position - msg_start + 7);
-    emit_lea(buf, RSI, RIP, offset);
     
     // mov rdx, len
     emit_mov_reg_imm64(buf, RDX, len);
