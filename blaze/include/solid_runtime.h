@@ -110,4 +110,13 @@ SolidNumber* solid_from_float(double value);
 void solid_pool_init(void);
 void solid_pool_cleanup(void);
 
+// Recovery strategies for undefined values
+typedef enum {
+    RECOVERY_PROPAGATE,     // Keep undefined
+    RECOVERY_USE_ZERO,      // Replace with 0
+    RECOVERY_USE_ONE,       // Replace with 1
+    RECOVERY_USE_INFINITY,  // Replace with ∞
+    RECOVERY_USE_NAN        // Replace with NaN
+} RecoveryStrategy;
+
 #endif // SOLID_RUNTIME_H
