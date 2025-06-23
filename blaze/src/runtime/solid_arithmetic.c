@@ -56,7 +56,7 @@ static inline uint64_t min_u64(uint64_t a, uint64_t b) {
 }
 
 // Helper to calculate new confidence after operation
-static uint16_t combine_confidence(uint16_t conf_a, uint16_t conf_b, char op) {
+uint16_t combine_confidence(uint16_t conf_a, uint16_t conf_b, char op) {
     // Confidence propagation rules
     uint32_t combined;
     
@@ -237,8 +237,10 @@ SolidNumber* solid_subtract(SolidNumber* a, SolidNumber* b) {
     // Special cases
     if (a->barrier_type == BARRIER_INFINITY && b->barrier_type == BARRIER_INFINITY) {
         // ∞ - ∞ = all natural numbers
-        // According to solid numbers spec: 1234567891011121314151617...(∞:∞)...{*}
-        return solid_init_with_gap("1234567891011121314151617", 25, 
+        // This should represent the sequence 1,2,3,4,5,6,7,8,9,10,11,12...
+        // For now, use a symbolic representation
+        // TODO: Implement proper sequence generation or special sequence type
+        return solid_init_with_gap("ℕ", 1,  // Natural numbers symbol
                                   BARRIER_INFINITY, ~0ULL,
                                   combine_confidence(a->confidence_x1000, b->confidence_x1000, '-'),
                                   NULL, 0, TERMINAL_SUPERPOSITION);
@@ -451,17 +453,9 @@ SolidNumber* solid_divide(SolidNumber* a, SolidNumber* b) {
     
     // Special cases
     if (a->barrier_type == BARRIER_INFINITY && b->barrier_type == BARRIER_INFINITY) {
-        // ∞ ÷ ∞ uses complex algorithm based on terminal digits
-        // TODO: Implement full algorithm with terminal digit analysis
-        // For now, return placeholder result
-        // According to spec, result depends on: 
-        // 1. Express each as (12,345,678,910 expression)
-        // 2. Divide by terminal digits
-        // 3. Divide quotients
-        // 4. Multiply terminal digits with modular arithmetic
-        return solid_init_with_gap("3.2", 3, BARRIER_INFINITY, ~0ULL, 
-                                  combine_confidence(a->confidence_x1000, b->confidence_x1000, '/'),
-                                  "00000", 5, TERMINAL_DIGITS);
+        // ∞ ÷ ∞ uses complex algorithm from solid_infinity.c
+        extern SolidNumber* solid_infinity_divide(SolidNumber* a, SolidNumber* b);
+        return solid_infinity_divide(a, b);
     }
     
     if (a->barrier_type == BARRIER_INFINITY) {
