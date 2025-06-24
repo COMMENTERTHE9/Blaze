@@ -892,6 +892,13 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
             break;
         }
         
+        case NODE_BOOL: {
+            // Load boolean value (0 or 1) into RAX
+            bool value = expr->data.boolean.value;
+            emit_mov_reg_imm64(buf, RAX, value ? 1 : 0);
+            break;
+        }
+        
         default:
             // Unknown expression type
             emit_mov_reg_imm64(buf, RAX, 0);
@@ -1064,6 +1071,14 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                 extern void generate_print_solid(CodeBuffer* buf);
                 generate_print_solid(buf);
                 // No stack cleanup needed since we're not allocating yet
+            } else if (content_node->type == NODE_BOOL) {
+                // Boolean literal - print "true" or "false"
+                bool value = content_node->data.boolean.value;
+                if (value) {
+                    generate_print(buf, "true", 4);
+                } else {
+                    generate_print(buf, "false", 5);
+                }
             } else if (content_node->type == NODE_STRING) {
                 // For string nodes, the name_offset points to string pool
                 const char* str_content = &string_pool[content_node->data.ident.name_offset];
@@ -1127,6 +1142,25 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                         extern void generate_print_solid(CodeBuffer* buf);
                         generate_print_solid(buf);
                         print_str("[OUTPUT] After generate_print_solid for variable\n");
+                    } else if (var && var->var_type == VAR_TYPE_BOOL) {
+                        print_str("[OUTPUT] Variable is bool type\n");
+                        // Generate identifier - will load bool (0/1) into RAX
+                        generate_expression(buf, nodes, content_idx, symbols, string_pool);
+                        // Print "true" or "false" based on RAX value
+                        // Test RAX
+                        emit_test_reg_reg(buf, RAX, RAX);
+                        // Jump if zero (false)
+                        emit_byte(buf, 0x74); // JZ
+                        emit_byte(buf, 0x0C); // Skip "true" and jump to "false"
+                        
+                        // Print "true"
+                        generate_print(buf, "true", 4);
+                        // Jump to end
+                        emit_byte(buf, 0xEB); // JMP
+                        emit_byte(buf, 0x0A); // Skip "false"
+                        
+                        // Print "false"
+                        generate_print(buf, "false", 5);
                     } else {
                         // Generate identifier - will load int into RAX
                         generate_expression(buf, nodes, content_idx, symbols, string_pool);

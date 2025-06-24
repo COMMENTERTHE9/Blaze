@@ -7,6 +7,48 @@
 #include "symbol_table_types.h"
 #include "blaze_stdlib.h"
 
+// Memory management structures
+// Reference count header (precedes each allocation)
+typedef struct RCHeader {
+    uint32_t size;
+    uint16_t refcount;
+    uint16_t flags;
+    #define RC_FLAG_TEMPORAL  0x0001
+    #define RC_FLAG_WEAK      0x0002
+    #define RC_FLAG_ARRAY4D   0x0004
+    #define RC_FLAG_MARKED    0x0008
+} RCHeader;
+
+// Temporal zone entry
+typedef struct TemporalEntry {
+    void* value_ptr;
+    uint64_t timeline_id;
+    int32_t temporal_offset;
+    uint32_t creating_timeline;
+    struct TemporalEntry* next;
+    struct TemporalEntry* prev;
+} TemporalEntry;
+
+// Zone manager
+typedef struct ZoneManager {
+    TemporalEntry* entries;
+    uint64_t used;
+    uint64_t capacity;
+    TimeZone zone_type;
+} ZoneManager;
+
+// Memory management globals
+typedef struct MemoryState {
+    void* arena;
+    ZoneManager zones[3];
+    uint8_t* heap_current;
+    uint64_t total_allocated;
+    uint64_t total_freed;
+    bool initialized;
+} MemoryState;
+
+extern MemoryState g_memory;
+
 // Configuration
 #define MAX_TOKENS 4096
 #define MAX_CODE_SIZE 1048576  // 1MB instead of 64KB
@@ -99,6 +141,7 @@ typedef enum {
     TOK_VAR_STRING,      // var.s-
     TOK_VAR_BOOL,        // var.b-
     TOK_VAR_SOLID,       // var.d-
+    TOK_VAR_CHAR,        // var.char- or var.ch-
     TOK_ARRAY_4D,        // array.4d
     TOK_FUNC_CAN,        // fucn.can
     TOK_ERROR_CATCH,     // error.catch
@@ -258,6 +301,10 @@ typedef enum {
     // Math function prefix
     TOK_MATH_PREFIX,     // math.
     
+    // Boolean literals
+    TOK_TRUE,            // true
+    TOK_FALSE,           // false
+    
     // Control
     TOK_EOF,
     TOK_ERROR
@@ -336,7 +383,8 @@ typedef enum {
     NODE_INLINE_ASM,
     NODE_FUNC_CALL,
     NODE_UNARY_OP,
-    NODE_SOLID
+    NODE_SOLID,
+    NODE_BOOL
 } NodeType;
 
 // AST Node - compact representation
@@ -427,6 +475,11 @@ typedef struct ASTNode {
             uint8_t terminal_len;       // Terminal digit count
             uint8_t terminal_type;      // 0=digits, 1=undefined(∅), 2=superposition({*})
         } solid;
+        
+        // Boolean value
+        struct {
+            bool value;                 // true or false
+        } boolean;
     } data;
 } ASTNode;
 

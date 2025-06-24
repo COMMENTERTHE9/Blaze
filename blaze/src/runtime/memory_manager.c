@@ -29,55 +29,30 @@ typedef struct {
     uint64_t action_depth;  // Nested action blocks
 } ArenaHeader;
 
-// Reference count header (precedes each allocation)
-typedef struct {
-    uint32_t size;
-    uint16_t refcount;
-    uint16_t flags;
-    #define RC_FLAG_TEMPORAL  0x0001
-    #define RC_FLAG_WEAK      0x0002
-    #define RC_FLAG_ARRAY4D   0x0004
-    #define RC_FLAG_MARKED    0x0008
-} RCHeader;
+// Memory structures are defined in blaze_internals.h
 
-// Temporal zone entry
-typedef struct TemporalEntry {
-    void* value_ptr;
-    uint64_t timeline_id;
-    int32_t temporal_offset;
-    uint32_t creating_timeline;
-    struct TemporalEntry* next;
-    struct TemporalEntry* prev;
-} TemporalEntry;
-
-// Zone manager
-typedef struct {
-    TemporalEntry* entries;
-    uint64_t used;
-    uint64_t capacity;
-    TimeZone zone_type;
-} ZoneManager;
+// Forward declarations for GC functions
+extern void temporal_gc_collect(void);
+extern void gc_add_root(void* ptr, const char* name);
+extern void gc_remove_root(void* ptr);
+extern void gc_add_timeline_link(void* from, void* to, TimeZone from_zone, TimeZone to_zone);
+extern uint64_t gc_get_timeline(void);
+extern uint64_t gc_new_timeline(void);
 
 // Global memory state
-static struct {
-    ArenaHeader* arena;
-    ZoneManager zones[3];  // Past, Present, Future
-    uint8_t* heap_current;
-    uint64_t total_allocated;
-    uint64_t total_freed;
-    bool initialized;
-} g_memory = {0};
+MemoryState g_memory = {0};
 
 // Initialize memory system
 void memory_init(void) {
     if (g_memory.initialized) return;
     
     // Initialize arena
-    g_memory.arena = (ArenaHeader*)ARENA_START;
-    g_memory.arena->current_offset = sizeof(ArenaHeader);
-    g_memory.arena->arena_size = ARENA_SIZE;
-    g_memory.arena->reset_point = sizeof(ArenaHeader);
-    g_memory.arena->action_depth = 0;
+    g_memory.arena = (void*)ARENA_START;
+    ArenaHeader* arena = (ArenaHeader*)g_memory.arena;
+    arena->current_offset = sizeof(ArenaHeader);
+    arena->arena_size = ARENA_SIZE;
+    arena->reset_point = sizeof(ArenaHeader);
+    arena->action_depth = 0;
     
     // Initialize temporal zones
     uint64_t zone_base = TEMPORAL_START;
@@ -118,20 +93,22 @@ void memory_init(void) {
 void* arena_alloc(uint64_t size) {
     if (!g_memory.initialized) memory_init();
     
+    ArenaHeader* arena = (ArenaHeader*)g_memory.arena;
+    
     // Align to 16 bytes
     size = (size + 15) & ~15;
     
-    uint64_t current = g_memory.arena->current_offset;
+    uint64_t current = arena->current_offset;
     uint64_t new_offset = current + size;
     
-    if (new_offset > g_memory.arena->arena_size) {
+    if (new_offset > arena->arena_size) {
         print_str("Arena exhausted! Size requested: ");
         print_num(size);
         print_str("\n");
         return NULL;
     }
     
-    g_memory.arena->current_offset = new_offset;
+    arena->current_offset = new_offset;
     return (void*)(ARENA_START + current);
 }
 
@@ -139,11 +116,12 @@ void* arena_alloc(uint64_t size) {
 void arena_enter_action(void) {
     if (!g_memory.initialized) memory_init();
     
-    g_memory.arena->action_depth++;
+    ArenaHeader* arena = (ArenaHeader*)g_memory.arena;
+    arena->action_depth++;
     
     // Save reset point for nested actions
-    if (g_memory.arena->action_depth == 1) {
-        g_memory.arena->reset_point = g_memory.arena->current_offset;
+    if (arena->action_depth == 1) {
+        arena->reset_point = arena->current_offset;
     }
 }
 
@@ -151,12 +129,13 @@ void arena_enter_action(void) {
 void arena_exit_action(void) {
     if (!g_memory.initialized) return;
     
-    if (g_memory.arena->action_depth > 0) {
-        g_memory.arena->action_depth--;
+    ArenaHeader* arena = (ArenaHeader*)g_memory.arena;
+    if (arena->action_depth > 0) {
+        arena->action_depth--;
         
         // Reset arena when exiting outermost action
-        if (g_memory.arena->action_depth == 0) {
-            g_memory.arena->current_offset = g_memory.arena->reset_point;
+        if (arena->action_depth == 0) {
+            arena->current_offset = arena->reset_point;
         }
     }
 }
@@ -174,8 +153,15 @@ void* rc_alloc(uint64_t size) {
         print_str("Heap exhausted! Size requested: ");
         print_num(size);
         print_str("\n");
-        // TODO: Trigger compaction or GC
-        return NULL;
+        
+        // Trigger temporal GC
+        temporal_gc();
+        
+        // Check again after GC
+        if ((uint64_t)(g_memory.heap_current - (uint8_t*)HEAP_START) + total_size > HEAP_SIZE) {
+            print_str("Still out of memory after GC!\n");
+            return NULL;
+        }
     }
     
     RCHeader* header = (RCHeader*)g_memory.heap_current;
@@ -255,11 +241,16 @@ void* temporal_alloc(TimeZone zone, uint64_t size) {
     // Create temporal entry
     TemporalEntry* entry = &zm->entries[zm->used++];
     entry->value_ptr = data;
-    entry->timeline_id = 0;  // TODO: Get current timeline
-    entry->temporal_offset = 0;  // TODO: Calculate offset
-    entry->creating_timeline = 0;  // TODO: Track timeline
+    entry->timeline_id = gc_get_timeline();
+    entry->temporal_offset = 0;  // TODO: Calculate offset based on time operators
+    entry->creating_timeline = gc_get_timeline();
     entry->next = NULL;
     entry->prev = (zm->used > 1) ? &zm->entries[zm->used - 2] : NULL;
+    
+    // Register as GC root if in PRESENT zone
+    if (zone == ZONE_PRESENT) {
+        gc_add_root(data, "temporal_present");
+    }
     
     return data;
 }
@@ -294,7 +285,8 @@ void memory_stats(void) {
     print_str("\n=== MEMORY STATISTICS ===\n");
     
     // Arena stats
-    uint64_t arena_used = g_memory.arena->current_offset - sizeof(ArenaHeader);
+    ArenaHeader* arena = (ArenaHeader*)g_memory.arena;
+    uint64_t arena_used = arena->current_offset - sizeof(ArenaHeader);
     print_str("Arena: ");
     print_num(arena_used / 1024);
     print_str(" KB used of ");
@@ -337,14 +329,7 @@ void memory_stats(void) {
 
 // Garbage collection for temporal zones
 void temporal_gc(void) {
-    print_str("Running temporal GC...\n");
-    
-    // TODO: Implement mark & sweep for temporal zones
-    // 1. Mark all reachable objects from roots
-    // 2. Sweep unmarked objects
-    // 3. Compact zones if needed
-    
-    print_str("Temporal GC complete\n");
+    temporal_gc_collect();
 }
 
 // Test the memory system

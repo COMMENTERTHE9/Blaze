@@ -383,11 +383,16 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
             // Check for generic var. pattern first (shortest match)
             else if (pos + 4 <= len && str_equals(&input[pos], "var.", 4)) {
                 // Look ahead to determine which var pattern this is
-                if (pos + 6 <= len && input[pos + 4] == 'v' && input[pos + 5] == '-') {
-                    // This is var.v- pattern (old style)
+                if ((pos + 6 <= len && input[pos + 4] == 'v' && input[pos + 5] == '-') ||
+                    (pos + 9 <= len && str_equals(&input[pos + 4], "var-", 4))) {
+                    // This is var.v- or var.var- pattern (generic variable)
                     tok->type = TOK_VAR;
                     uint32_t var_start = pos;
-                    pos += 6; // Skip "var.v-"
+                    if (input[pos + 4] == 'v' && input[pos + 5] == '-') {
+                        pos += 6; // Skip "var.v-"
+                    } else {
+                        pos += 8; // Skip "var.var-"
+                    }
                     
                     // Parse variable name
                     while (pos < len && (char_types[(unsigned char)input[pos]] == CHAR_ALPHA || 
@@ -403,11 +408,16 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     
                     tok->len = pos - var_start;
                 }
-                else if (pos + 6 <= len && input[pos + 4] == 'c' && input[pos + 5] == '-') {
-                    // This is var.c- pattern (constant)
+                else if ((pos + 6 <= len && input[pos + 4] == 'c' && input[pos + 5] == '-') ||
+                         (pos + 10 <= len && str_equals(&input[pos + 4], "const-", 6))) {
+                    // This is var.c- or var.const- pattern (constant)
                     tok->type = TOK_CONST;
                     uint32_t const_start = pos;
-                    pos += 6; // Skip "var.c-"
+                    if (input[pos + 4] == 'c' && input[pos + 5] == '-') {
+                        pos += 6; // Skip "var.c-"
+                    } else {
+                        pos += 10; // Skip "var.const-"
+                    }
                     
                     // Parse constant name
                     while (pos < len && (char_types[(unsigned char)input[pos]] == CHAR_ALPHA || 
@@ -423,11 +433,16 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     
                     tok->len = pos - const_start;
                 }
-                else if (pos + 6 <= len && input[pos + 4] == 'i' && input[pos + 5] == '-') {
-                    // This is var.i- pattern (integer)
+                else if ((pos + 6 <= len && input[pos + 4] == 'i' && input[pos + 5] == '-') ||
+                         (pos + 9 <= len && str_equals(&input[pos + 4], "int-", 4))) {
+                    // This is var.i- or var.int- pattern (integer)
                     tok->type = TOK_VAR_INT;
                     uint32_t var_start = pos;
-                    pos += 6; // Skip "var.i-"
+                    if (input[pos + 4] == 'i' && input[pos + 5] == '-') {
+                        pos += 6; // Skip "var.i-"
+                    } else {
+                        pos += 8; // Skip "var.int-"
+                    }
                     
                     // Parse variable name
                     while (pos < len && (char_types[(unsigned char)input[pos]] == CHAR_ALPHA || 
@@ -443,11 +458,16 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     
                     tok->len = pos - var_start;
                 }
-                else if (pos + 6 <= len && input[pos + 4] == 'f' && input[pos + 5] == '-') {
-                    // This is var.f- pattern (float)
+                else if ((pos + 6 <= len && input[pos + 4] == 'f' && input[pos + 5] == '-') ||
+                         (pos + 10 <= len && str_equals(&input[pos + 4], "float-", 6))) {
+                    // This is var.f- or var.float- pattern (float)
                     tok->type = TOK_VAR_FLOAT;
                     uint32_t var_start = pos;
-                    pos += 6; // Skip "var.f-"
+                    if (input[pos + 4] == 'f' && input[pos + 5] == '-') {
+                        pos += 6; // Skip "var.f-"
+                    } else {
+                        pos += 10; // Skip "var.float-"
+                    }
                     
                     // Parse variable name
                     while (pos < len && (char_types[(unsigned char)input[pos]] == CHAR_ALPHA || 
@@ -463,11 +483,16 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     
                     tok->len = pos - var_start;
                 }
-                else if (pos + 6 <= len && input[pos + 4] == 's' && input[pos + 5] == '-') {
-                    // This is var.s- pattern (string)
+                else if ((pos + 6 <= len && input[pos + 4] == 's' && input[pos + 5] == '-') ||
+                         (pos + 11 <= len && str_equals(&input[pos + 4], "string-", 7))) {
+                    // This is var.s- or var.string- pattern (string)
                     tok->type = TOK_VAR_STRING;
                     uint32_t var_start = pos;
-                    pos += 6; // Skip "var.s-"
+                    if (input[pos + 4] == 's' && input[pos + 5] == '-') {
+                        pos += 6; // Skip "var.s-"
+                    } else {
+                        pos += 11; // Skip "var.string-"
+                    }
                     
                     // Parse variable name
                     while (pos < len && (char_types[(unsigned char)input[pos]] == CHAR_ALPHA || 
@@ -483,11 +508,16 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     
                     tok->len = pos - var_start;
                 }
-                else if (pos + 6 <= len && input[pos + 4] == 'b' && input[pos + 5] == '-') {
-                    // This is var.b- pattern (boolean)
+                else if ((pos + 6 <= len && input[pos + 4] == 'b' && input[pos + 5] == '-') ||
+                         (pos + 9 <= len && str_equals(&input[pos + 4], "bool-", 5))) {
+                    // This is var.b- or var.bool- pattern (boolean)
                     tok->type = TOK_VAR_BOOL;
                     uint32_t var_start = pos;
-                    pos += 6; // Skip "var.b-"
+                    if (input[pos + 4] == 'b' && input[pos + 5] == '-') {
+                        pos += 6; // Skip "var.b-"
+                    } else {
+                        pos += 9; // Skip "var.bool-"
+                    }
                     
                     // Parse variable name
                     while (pos < len && (char_types[(unsigned char)input[pos]] == CHAR_ALPHA || 
@@ -503,11 +533,41 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     
                     tok->len = pos - var_start;
                 }
-                else if (pos + 6 <= len && input[pos + 4] == 'd' && input[pos + 5] == '-') {
-                    // This is var.d- pattern (solid number)
+                else if ((pos + 6 <= len && input[pos + 4] == 'd' && input[pos + 5] == '-') ||
+                         (pos + 10 <= len && str_equals(&input[pos + 4], "solid-", 6))) {
+                    // This is var.d- or var.solid- pattern (solid number)
                     tok->type = TOK_VAR_SOLID;
                     uint32_t var_start = pos;
-                    pos += 6; // Skip "var.d-"
+                    if (input[pos + 4] == 'd' && input[pos + 5] == '-') {
+                        pos += 6; // Skip "var.d-"
+                    } else {
+                        pos += 10; // Skip "var.solid-"
+                    }
+                    
+                    // Parse variable name
+                    while (pos < len && (char_types[(unsigned char)input[pos]] == CHAR_ALPHA || 
+                                        char_types[(unsigned char)input[pos]] == CHAR_DIGIT ||
+                                        input[pos] == '_')) {
+                        pos++;
+                    }
+                    
+                    // Include trailing dash if present
+                    if (pos < len && input[pos] == '-') {
+                        pos++;
+                    }
+                    
+                    tok->len = pos - var_start;
+                }
+                else if ((pos + 7 <= len && str_equals(&input[pos + 4], "ch-", 3)) ||
+                         (pos + 9 <= len && str_equals(&input[pos + 4], "char-", 5))) {
+                    // This is var.ch- or var.char- pattern (character)
+                    tok->type = TOK_VAR_CHAR;
+                    uint32_t var_start = pos;
+                    if (input[pos + 4] == 'c' && input[pos + 5] == 'h' && input[pos + 6] == '-') {
+                        pos += 7; // Skip "var.ch-"
+                    } else {
+                        pos += 9; // Skip "var.char-"
+                    }
                     
                     // Parse variable name
                     while (pos < len && (char_types[(unsigned char)input[pos]] == CHAR_ALPHA || 
@@ -578,7 +638,15 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     pos++;
                 }
                 tok->len = pos - start;
-                tok->type = TOK_IDENTIFIER;
+                
+                // Check for boolean keywords
+                if (tok->len == 4 && str_equals(&input[start], "true", 4)) {
+                    tok->type = TOK_TRUE;
+                } else if (tok->len == 5 && str_equals(&input[start], "false", 5)) {
+                    tok->type = TOK_FALSE;
+                } else {
+                    tok->type = TOK_IDENTIFIER;
+                }
             }
         }
         else if (ch_type == CHAR_DIGIT || (ch == '0' && pos + 1 < len && (input[pos + 1] == 'x' || input[pos + 1] == 'X'))) {

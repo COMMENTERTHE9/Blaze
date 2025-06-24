@@ -528,6 +528,11 @@ static uint16_t parse_solid_number(Parser* p) {
                 
                 p->nodes[node].data.solid.gap_magnitude = gap;
                 
+                // Set barrier type to infinity if detected
+                if (is_infinity) {
+                    p->nodes[node].data.solid.barrier_type = 'i'; // BARRIER_INFINITY
+                }
+                
                 // Parse optional confidence
                 if (pos < len && input[pos] == '|') {
                     pos++;
@@ -669,6 +674,28 @@ static uint16_t parse_primary(Parser* p) {
     // Solid numbers
     if (check(p, TOK_SOLID_NUMBER)) {
         return parse_solid_number(p);
+    }
+    
+    // Boolean literals
+    if (check(p, TOK_TRUE) || check(p, TOK_FALSE)) {
+        Token* bool_tok = advance(p);
+        uint16_t bool_node = alloc_node(p, NODE_BOOL);
+        if (bool_node == 0) return 0;
+        
+        p->nodes[bool_node].data.boolean.value = (bool_tok->type == TOK_TRUE);
+        return bool_node;
+    }
+    
+    // Unary operators (!, ~~)
+    if (check(p, TOK_BANG) || check(p, TOK_BIT_NOT)) {
+        Token* op_tok = advance(p);
+        uint16_t unary_node = alloc_node(p, NODE_UNARY_OP);
+        if (unary_node == 0) return 0;
+        
+        p->nodes[unary_node].data.unary.op = op_tok->type;
+        p->nodes[unary_node].data.unary.expr_idx = parse_primary(p);
+        
+        return unary_node;
     }
     
     // Math functions: math.sin(x), math.cos(x), etc.
@@ -1171,6 +1198,14 @@ static uint16_t parse_var_def(Parser* p) {
         case TOK_VAR_STRING: var_type = 4; break;
         case TOK_VAR_BOOL: var_type = 5; break;
         case TOK_VAR_SOLID: var_type = 6; break;
+        case TOK_VAR_CHAR: var_type = 7; break;
+        default:
+            // This should never happen - parse_var_def should only be called with var tokens
+            print_str("[PARSER] ERROR: Invalid token type in parse_var_def: ");
+            print_num(var_tok->type);
+            print_str("\n");
+            p->has_error = true;
+            return 0;
     }
     
     // Extract variable name from the token
