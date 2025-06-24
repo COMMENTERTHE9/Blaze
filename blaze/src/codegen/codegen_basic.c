@@ -480,6 +480,7 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                 
                 if (right_is_float) {
                     // Result is in XMM0, save to stack
+                    print_str("[BINARY] Saving right operand (float) to stack\n");
                     emit_sub_reg_imm32(buf, RSP, 8);
                     emit_movsd_mem_xmm(buf, RSP, XMM0);
                 } else {
@@ -499,6 +500,7 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                 // Left result is now in XMM0
                 
                 // Load right operand from stack into XMM1
+                print_str("[BINARY] Loading saved right operand from stack to XMM1\n");
                 emit_movsd_xmm_mem(buf, XMM1, RSP);
                 emit_add_reg_imm32(buf, RSP, 8);
                 
@@ -511,6 +513,7 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                         emit_subsd_xmm_xmm(buf, XMM0, XMM1);
                         break;
                     case TOK_STAR:
+                        print_str("[BINARY] Emitting mulsd xmm0, xmm1\n");
                         emit_mulsd_xmm_xmm(buf, XMM0, XMM1);
                         break;
                     case TOK_DIV:
@@ -522,15 +525,17 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                 }
             } else {
                 // Integer operation (existing code)
-                // Evaluate right operand first and push to stack
+                // Evaluate right operand first
                 generate_expression(buf, nodes, right_idx, symbols, string_pool);
-                emit_push_reg(buf, RAX);
+                // Save right operand in R10 (a register that won't be clobbered)
+                emit_mov_reg_reg(buf, R10, RAX);
                 
                 // Evaluate left operand
                 generate_expression(buf, nodes, left_idx, symbols, string_pool);
+                // Now RAX has left operand
                 
-                // Pop right operand into RDX
-                emit_pop_reg(buf, RDX);
+                // Move right operand to RDX
+                emit_mov_reg_reg(buf, RDX, R10);
                 
                 // Perform operation (result in RAX)
                 switch (op) {
