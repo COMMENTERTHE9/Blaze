@@ -38,6 +38,7 @@ SRCS = src/blaze_compiler_main_clean.c \
        src/codegen/elf_generator.c \
        src/codegen/pe_generator.c \
        src/runtime/memory_manager.c \
+       src/runtime/temporal_gc.c \
        src/runtime/blaze_stdlib.c \
        src/runtime/blaze_start.c
 
