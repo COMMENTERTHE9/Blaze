@@ -190,7 +190,9 @@ void generate_var_load(CodeBuffer* buf, const char* var_name, X64Register dest_r
     print_num(var->is_initialized);
     print_str("\n");
     
-    // Load value from [RBP + offset]
+    // Load value from [RSP + offset]
+    // Note: If values have been pushed to the stack, we need to account for that
+    // For now, we assume the caller handles stack adjustments
     emit_mov_reg_mem(buf, dest_reg, RSP, 256 + var->stack_offset);
 }
 
