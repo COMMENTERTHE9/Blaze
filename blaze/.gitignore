@@ -7,3 +7,22 @@ out2
 blaze
 blaze_debug
 blaze_*
+
+# Temporary development files
+BUGFIXES.md
+FIX_*.md
+FUNCTION_*.md
+ISSUES_FOUND.md
+MEMORY_INTEGRATION.md
+OPTIMIZATION_*.md
+QUICK_FIXES_*.md
+README_SOLID_NUMBERS.md
+SOLID_NUMBERS_IMPLEMENTATION_PLAN.md
+SWARM_*.md
+FINAL_STATUS.md
+optimization_*.md
+COMPLETE_BLAZE_SYNTAX_REFERENCE.md
+
+# Object files
+*.o
+*.bak
