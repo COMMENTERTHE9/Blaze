@@ -57,7 +57,7 @@ make
 - Local log: blaze_errors.log
 
 ## Current Status
-✅ Variables working (int, float, solid)
+✅ Variables working (int, float, solid, string)
 ✅ Functions working
 ✅ Print statements working
 ✅ Sentry error tracking
@@ -66,9 +66,21 @@ make
 ✅ Math functions (sin, cos, tan, sqrt, log, exp)
 ✅ Solid numbers with full letter/digit support
 ✅ Quick syntax for solids (!, ~)
-🔧 Integrating arithmetic with longs/floats
+✅ Full name syntax for all keywords (var.var-, func.can, etc.)
+✅ Temporal-aware garbage collector
+✅ String variables with var.s- syntax
+🔧 String manipulation operations
 🔧 Solid number arithmetic operations
 ⚠️ -O2/-O3 still crash on startup
+
+## IMPORTANT: Git Commit Guidelines
+**NEVER include AI attribution in commits:**
+- ❌ NO "Generated with Claude Code" 
+- ❌ NO "Co-Authored-By: Claude"
+- ❌ NO references to AI assistance
+- ✅ Write commits as if Gabriel wrote them
+- ✅ Focus on what changed, not how it was written
+- ✅ Keep the project appearing human-maintained for open source credibility
 
 ## Key Files
 - `src/codegen/codegen_math.c` - Math function generation
