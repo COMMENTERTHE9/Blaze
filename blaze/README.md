@@ -1,8 +1,13 @@
 # Blaze 🔥
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/COMMENTERTHE9/Blaze/test.yml?branch=main)](https://github.com/COMMENTERTHE9/Blaze/actions)
+[![GitHub Issues](https://img.shields.io/github/issues/COMMENTERTHE9/Blaze)](https://github.com/COMMENTERTHE9/Blaze/issues)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Help Wanted](https://img.shields.io/badge/help-wanted-green.svg)](https://github.com/COMMENTERTHE9/Blaze/labels/help%20wanted)
+[![Good First Issues](https://img.shields.io/github/issues/COMMENTERTHE9/Blaze/good%20first%20issue)](https://github.com/COMMENTERTHE9/Blaze/labels/good%20first%20issue)
+[![GitHub Stars](https://img.shields.io/github/stars/COMMENTERTHE9/Blaze?style=social)](https://github.com/COMMENTERTHE9/Blaze)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL-blue)](https://github.com/COMMENTERTHE9/Blaze)
 
 A revolutionary programming language compiler that translates Blaze language to x86-64 machine code, featuring time-travel debugging, GGGX optimization, and industrial-strength computation support.
 
@@ -303,6 +308,11 @@ The compiler integrates with Sentry for automatic error tracking. Errors are log
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+```
+MIT License
+Copyright (c) 2024 Gabriel I.T.
+```
 
 ## Author
 
