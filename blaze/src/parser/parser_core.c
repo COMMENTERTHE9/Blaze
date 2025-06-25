@@ -2329,10 +2329,13 @@ static uint16_t parse_statement(Parser* p) {
             p->nodes[output_node].data.output.content_idx = 0xFFFF;
         }
         
-        // Consume ending backslash if present
-        if (check(p, TOK_BACKSLASH)) {
-            advance(p);
+        // Require ending backslash
+        if (!check(p, TOK_BACKSLASH)) {
+            p->has_error = true;
+            print_str("[PARSER] ERROR: Print statement requires closing backslash\n");
+            return 0;
         }
+        advance(p);  // Consume the backslash
         
         return output_node;
     }
