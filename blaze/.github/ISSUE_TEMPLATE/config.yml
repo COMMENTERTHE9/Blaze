@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/COMMENTERTHE9/Blaze/discussions
+    about: For general discussions, ideas, and community support
+  - name: Documentation
+    url: https://github.com/COMMENTERTHE9/Blaze/tree/main/blaze/docs
+    about: Check our documentation for answers
