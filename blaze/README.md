@@ -42,7 +42,12 @@ make debug
 
 # Clean build artifacts
 make clean
+
+# Run tests
+make test
 ```
+
+**Windows Users**: You need WSL (Windows Subsystem for Linux). See [docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md) for setup instructions.
 
 ## Usage
 
@@ -283,11 +288,13 @@ The compiler integrates with Sentry for automatic error tracking. Errors are log
 ## Documentation
 
 - [Language Specification](docs/LANGUAGE_SPEC.md) - Complete syntax reference
+- [Why Blaze Syntax](docs/WHY_BLAZE_SYNTAX.md) - **Why the syntax is better, not just different**
 - [Solid Numbers Implementation](docs/SOLID_NUMBERS_IMPLEMENTATION.md) - In-depth explanation
 - [GGGX Framework](docs/GGGX_FRAMEWORK.md) - Computational feasibility analysis
 - [Time Travel Specification](docs/TIME_TRAVEL_SPEC.md) - Temporal debugging features
 - [Architecture Overview](docs/ARCHITECTURE.md) - Compiler internals
-- [Examples](examples/) - Code samples and tutorials
+- [Examples](examples/) - **Working code that shows Blaze benefits**
+- [Windows Build Guide](docs/WINDOWS_BUILD.md) - WSL setup for Windows users
 
 ## Known Limitations
 
