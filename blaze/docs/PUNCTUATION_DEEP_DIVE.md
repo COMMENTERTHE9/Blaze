@@ -2,42 +2,43 @@
 
 Every single punctuation mark in Blaze tells you something. This isn't decoration - it's information.
 
-## The Forward Slash `/` - Direction of Flow
+## The Forward Slash `/` - Command Separator
 
-The `/` shows **direction of action or data flow**. Think of it as an arrow showing where things are going.
+The `/` is a **command separator** - it separates the action/command from its parameters. It's NOT a flow operator.
 
 ### In Function Calls
 ```blaze
-^function_name/          # Data flows INTO the function
-^function_name/ param    # Parameter flows through / into function
+^function_name/          # / separates function name from call
+^function_name/ param    # Parameters come after the /
 ```
 
-### In Control Flow
+### In Statements
 ```blaze
-if/ condition <          # Condition flows into the if statement
-    # code
-:>
+if/ condition <          # / separates 'if' from condition
+print/ "Hello" \         # / separates 'print' from what to print
+while/ x < 10 <          # / separates 'while' from condition
 ```
 
-### In Output
+Think of `/` as a colon or separator - "do this / with this"
+
+## Flow Operators - The Real Flow Syntax
+
+### Flow Direction `<` `>` 
 ```blaze
-print/ "Hello" \         # String flows out through print
-txt/ message \           # Message flows to text output
-out/ result \            # Result flows to standard output
+data > variable          # Data flows INTO variable
+variable < data          # Variable receives data
 ```
 
-### In Loops
+### Pipeline Flow `<<` `>>`
 ```blaze
-while/ x < 10 <          # Condition flows into while
-    x = x + 1
-:>
-
-for/ i in range <        # Iterator flows into for loop
-    print/ i \
-:>
+input >> process >> output    # Pipeline flow left to right
+output << process << input    # Pipeline flow right to left
 ```
 
-The `/` is ALWAYS about flow direction. When you see `/`, ask: "What's flowing where?"
+### Bidirectional Flow `</<`
+```blaze
+a </< b                  # Bidirectional data exchange
+```
 
 ## The Backslash `\` - Statement Termination
 
@@ -90,20 +91,24 @@ if/ x > 5 <
 
 Why `:>`? Because `>` alone would be ambiguous with greater-than. The `:` makes it unambiguous.
 
-## The Caret `^` - Elevation/Invocation
+## The Caret `^` - Function Invocation & Timeline Jumps
 
-The `^` **lifts you up** to a higher level - specifically to function level:
+The `^` has two main uses:
 
+### 1. Function Invocation
 ```blaze
-^function_name/          # Elevate to function level and invoke
-^math.calculate/ x y     # Elevate to math.calculate function
-
-# Compare to:
-variable_name           # Just a variable reference (ground level)
-^function_name/         # Function invocation (elevated level)
+^function_name/          # Invoke function
+^math.calculate/ x y     # Invoke with parameters
 ```
 
-The visual metaphor: `^` points up, lifting you from data level to function level.
+### 2. Timeline Jumps
+```blaze
+^timeline.[checkpoint]/  # Jump to timeline checkpoint
+^timeline.[past]/       # Jump to past
+^timeline.[future]/     # Jump to future
+```
+
+The visual metaphor: `^` points up, like jumping up and over to another point.
 
 ## The Dot `.` - Namespace/Type Separation
 
@@ -207,36 +212,66 @@ In Blaze you can see:
 - `<` `:>` show scope boundaries
 - `\` shows output boundaries
 
-## Common Patterns
+## Flow Operators - The Real Deal
 
-### Input/Process/Output
+### Basic Flow `<` and `>`
 ```blaze
-# Input flows in
-var.v-data-[^read_input/]
+# Forward flow
+data > variable         # Data flows INTO variable
+a > b > c              # Chain: a → b → c
 
-# Process with clear function elevation  
-var.v-result-[^process/ data]
-
-# Output flows out
-print/ result \
+# Backward flow  
+variable < data        # Variable RECEIVES data
+result < compute       # Result pulled from computation
 ```
 
-### Conditional Execution
+### Pipeline Flow `<<` and `>>`
 ```blaze
-if/ condition <          # Condition flows into if
-    ^do_something/       # Elevate and execute
-:> else <                # Clear scope transition
-    ^do_other/          # Alternative path
+# Forward pipeline
+input >> transform >> output    # Data streams through
+
+# Backward pipeline
+output << transform << input    # Results flow back
+```
+
+### Bidirectional Flow `</<`
+```blaze
+state1 </< state2      # Quantum entanglement - both exchange
+```
+
+### Conditional Flow with `*>`
+```blaze
+fucn.ck/value *>10> big_handler/ small_handler< \>|
+# If value > 10, flow goes to big_handler
+# Otherwise, flow goes to small_handler
+```
+
+## Common Patterns
+
+### River Flow Processing
+```blaze
+# Data flows like water
+raw_data >> validate >> clean >> process >> store
+
+# Time travel upstream
+if/ error <
+    < restore << previous_state   # Flow backwards!
 :>
 ```
 
-### Loop Patterns
+### Branching Rivers
 ```blaze
-while/ ^check_condition/ <    # Condition function elevated
-    ^process_item/           # Process elevated
-    if/ done <               # Nested flow
-        break/               # Break flow
-    :>
+|router| verb.can<
+    fucn.ck/input *>threshold> high_path/ low_path< \>|
+:>
+```
+
+### Timeline Patterns
+```blaze
+timeline-[checkpoint_a]
+# risky operations...
+if/ failed <
+    ^timeline.[checkpoint_a]/    # Jump back in time
 :>
 ```
 

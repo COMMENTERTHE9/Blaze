@@ -1,0 +1,133 @@
+# 🌊 Real Flow Operators in Blaze - The River Model
+
+# IMPORTANT: Previous examples were WRONG about flow!
+# / is NOT flow - it's just a separator
+# < > << >> </< are the REAL flow operators!
+
+# EXAMPLE 1: Basic Flow Direction
+var.v-source-[100]
+var.v-destination-[0]
+
+# Forward flow with >
+source > destination        # source flows INTO destination
+print/ destination \        # Now destination = 100
+
+# Backward flow with <
+var.v-result-[0]
+result < source * 2         # result RECEIVES source * 2
+print/ result \            # result = 200
+
+
+# EXAMPLE 2: Pipeline Flow (The Rapids)
+var.v-raw-[42]
+
+# Forward pipeline with >>
+raw >> double >> add_ten >> final
+# Each function processes and passes forward
+
+# Backward pipeline with <<
+reversed << add_ten << double << raw  
+# Results flow backwards through the pipeline
+
+
+# EXAMPLE 3: Branching Flow (River Delta)
+|smart_router| verb.can<
+    # Conditional branching with *>
+    fucn.ck/input *>50> big_handler/ small_handler< \>|
+    # If input > 50, flow goes to big_handler
+    # Otherwise, flow goes to small_handler
+:>
+
+# More complex branching
+|category_router| verb.can<
+    fucn.ck/score *>90> excellent/ *>70> good/ *>50> pass/ fail< \>|
+    # Multiple branches based on score thresholds
+:>
+
+
+# EXAMPLE 4: Time Travel Flow (Upstream)
+timeline-[start_point]
+var.v-attempts-[0]
+
+|risky_operation| verb.can<
+    attempts = attempts + 1
+    print/ "Attempt: " \
+    print/ attempts \
+    
+    # Simulate failure on first 2 attempts
+    if/ attempts < 3 <
+        print/ "Failed! Going back in time..." \
+        ^timeline.[start_point]/    # Jump back upstream!
+    :>
+    
+    print/ "Success on attempt 3!" \
+:>
+
+^risky_operation/
+
+
+# EXAMPLE 5: Bidirectional Flow (Quantum Whirlpool)
+var.q-cat_state-["alive"]
+var.q-box_state-["closed"]
+
+# Quantum entanglement - both states affect each other
+cat_state </< box_state    # Bidirectional exchange
+# Now both states are entangled!
+
+print/ "Cat: " \
+print/ cat_state \
+print/ "Box: " \
+print/ box_state \
+
+
+# EXAMPLE 6: Complex River System
+|data_river| verb.can<
+    # Multiple streams converging
+    var.v-stream1-[^source_a/]
+    var.v-stream2-[^source_b/]
+    var.v-stream3-[^source_c/]
+    
+    # Streams merge and flow
+    stream1 > main_flow
+    stream2 >> main_flow  
+    stream3 >> main_flow
+    
+    # Main flow branches based on volume
+    fucn.ck/main_flow *>1000> heavy_process/ light_process< \>|
+    
+    # Results can flow back upstream if needed
+    if/ error_detected <
+        < main_flow << recovery_state
+    :>
+:>
+
+
+# EXAMPLE 7: Save Points and Rewind
+timeline-[before_boss]
+var.v-health-[100]
+var.v-ammo-[50]
+
+|fight_boss| verb.can<
+    health = health - 80
+    ammo = 0
+    
+    if/ health < 20 <
+        print/ "You died! Rewinding..." \
+        ^timeline.[before_boss]/    # Flow back to save point
+    :>
+    
+    print/ "Boss defeated!" \
+:>
+
+^fight_boss/
+
+
+# THE KEY INSIGHT:
+# Blaze execution flows like a river:
+# - Forward with > and >>
+# - Backward with < and <<  
+# - Both ways with </<
+# - Branches with *>condition>
+# - Can flow back in time with ^timeline.[]
+
+# This is NOT possible in traditional languages!
