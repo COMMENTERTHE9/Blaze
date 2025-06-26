@@ -1,0 +1,65 @@
+name: Blaze Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-release:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - name: Setup environment (Windows)
+        if: runner.os == 'Windows'
+        run: choco install make mingw
+
+      - name: Build Blaze (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          make clean && make
+          mkdir blaze-${{ github.ref_name }}-linux-x86_64
+          cp blaze blaze-${{ github.ref_name }}-linux-x86_64/
+          cp -r examples README.md LICENSE blaze-${{ github.ref_name }}-linux-x86_64/
+          mkdir -p blaze-${{ github.ref_name }}-linux-x86_64/docs
+          cp docs/*.md blaze-${{ github.ref_name }}-linux-x86_64/docs/ || true
+          tar -czf blaze-${{ github.ref_name }}-linux-x86_64.tar.gz blaze-${{ github.ref_name }}-linux-x86_64
+
+      - name: Build Blaze (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          make clean && mingw32-make
+          mkdir blaze-${{ github.ref_name }}-win-x86_64
+          cp blaze.exe blaze-${{ github.ref_name }}-win-x86_64/
+          cp -r examples README.md LICENSE blaze-${{ github.ref_name }}-win-x86_64/
+          mkdir -p blaze-${{ github.ref_name }}-win-x86_64/docs
+          cp docs/*.md blaze-${{ github.ref_name }}-win-x86_64/docs/ || true
+          7z a blaze-${{ github.ref_name }}-win-x86_64.zip blaze-${{ github.ref_name }}-win-x86_64/
+
+      - name: Build Blaze (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          make clean && make
+          mkdir blaze-${{ github.ref_name }}-macos-x86_64
+          cp blaze blaze-${{ github.ref_name }}-macos-x86_64/
+          cp -r examples README.md LICENSE blaze-${{ github.ref_name }}-macos-x86_64/
+          mkdir -p blaze-${{ github.ref_name }}-macos-x86_64/docs
+          cp docs/*.md blaze-${{ github.ref_name }}-macos-x86_64/docs/ || true
+          tar -czf blaze-${{ github.ref_name }}-macos-x86_64.tar.gz blaze-${{ github.ref_name }}-macos-x86_64
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            blaze-*.tar.gz
+            blaze-*.zip
