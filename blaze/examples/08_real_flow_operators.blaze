@@ -1,20 +1,19 @@
-# 🌊 Real Flow Operators in Blaze - The River Model
+# 🌊 Water Flow in Blaze - It's Just Direction!
 
-# IMPORTANT: Previous examples were WRONG about flow!
-# / is NOT flow - it's just a separator
-# < > << >> </< are the REAL flow operators!
+# The < and > symbols simply show which way the water flows
+# Think of your data as water moving through your program
 
-# EXAMPLE 1: Basic Flow Direction
+# EXAMPLE 1: Basic Water Direction
 var.v-source-[100]
 var.v-destination-[0]
 
-# Forward flow with >
-source > destination        # source flows INTO destination
-print/ destination \        # Now destination = 100
+# Water flows downstream with >
+source > destination        # Water carries 100 downstream to destination
+print/ destination \        # destination now contains 100
 
-# Backward flow with <
+# Water flows upstream with <
 var.v-result-[0]
-result < source * 2         # result RECEIVES source * 2
+result < source * 2         # Result receives water from upstream (200)
 print/ result \            # result = 200
 
 

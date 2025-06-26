@@ -212,68 +212,14 @@ In Blaze you can see:
 - `<` `:>` show scope boundaries
 - `\` shows output boundaries
 
-## Flow Operators - The Real Deal
+## Water Flow Operators
 
-### Basic Flow `<` and `>`
-```blaze
-# Forward flow
-data > variable         # Data flows INTO variable
-a > b > c              # Chain: a → b → c
+For the complete explanation of how `<` and `>` represent water flow direction, see [Water Flow Metaphor](WATER_METAPHOR_COMPLETE.md).
 
-# Backward flow  
-variable < data        # Variable RECEIVES data
-result < compute       # Result pulled from computation
-```
-
-### Pipeline Flow `<<` and `>>`
-```blaze
-# Forward pipeline
-input >> transform >> output    # Data streams through
-
-# Backward pipeline
-output << transform << input    # Results flow back
-```
-
-### Bidirectional Flow `</<`
-```blaze
-state1 </< state2      # Quantum entanglement - both exchange
-```
-
-### Conditional Flow with `*>`
-```blaze
-fucn.ck/value *>10> big_handler/ small_handler< \>|
-# If value > 10, flow goes to big_handler
-# Otherwise, flow goes to small_handler
-```
-
-## Common Patterns
-
-### River Flow Processing
-```blaze
-# Data flows like water
-raw_data >> validate >> clean >> process >> store
-
-# Time travel upstream
-if/ error <
-    < restore << previous_state   # Flow backwards!
-:>
-```
-
-### Branching Rivers
-```blaze
-|router| verb.can<
-    fucn.ck/input *>threshold> high_path/ low_path< \>|
-:>
-```
-
-### Timeline Patterns
-```blaze
-timeline-[checkpoint_a]
-# risky operations...
-if/ failed <
-    ^timeline.[checkpoint_a]/    # Jump back in time
-:>
-```
+Key points:
+- `<` and `>` show water direction (not covered here - see water metaphor doc)
+- `*>` and `*<` are comparisons (not water flow)
+- Time bridges like `>/>` control speed (covered in water metaphor doc)
 
 ## Why This Matters
 

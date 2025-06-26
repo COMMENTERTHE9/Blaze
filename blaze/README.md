@@ -288,10 +288,12 @@ The compiler integrates with Sentry for automatic error tracking. Errors are log
 ## Documentation
 
 - [Language Specification](docs/LANGUAGE_SPEC.md) - Complete syntax reference
+- [Water Flow Metaphor](docs/WATER_METAPHOR_COMPLETE.md) - **Understanding < and > as water direction**
 - [Why Blaze Syntax](docs/WHY_BLAZE_SYNTAX.md) - **Why the syntax is better, not just different**
-- [Punctuation Deep Dive](docs/PUNCTUATION_DEEP_DIVE.md) - **Complete guide to every symbol's meaning**
-- [Solid Numbers Implementation](docs/SOLID_NUMBERS_IMPLEMENTATION.md) - In-depth explanation
+- [Punctuation Deep Dive](docs/PUNCTUATION_DEEP_DIVE.md) - **Guide to all punctuation (/, \, |, ^, etc.)**
+- [Solid Numbers Complete Guide](docs/SOLID_NUMBERS_COMPLETE.md) - Comprehensive solid numbers reference
 - [GGGX Framework](docs/GGGX_FRAMEWORK.md) - Computational feasibility analysis
+- [Solid Numbers Quick Start](docs/SOLID_NUMBERS_QUICK_START.md) - Get started with solid numbers
 - [Time Travel Specification](docs/TIME_TRAVEL_SPEC.md) - Temporal debugging features
 - [Architecture Overview](docs/ARCHITECTURE.md) - Compiler internals
 - [Examples](examples/) - **Working code that shows Blaze benefits**

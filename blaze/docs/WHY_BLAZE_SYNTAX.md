@@ -1,6 +1,6 @@
 # Why Blaze Syntax Is Better
 
-Not just different. **Better**. Here's why.
+Not just different. **Better**. This is a deep dive into why every character matters.
 
 ## 1. Every Character Has Purpose
 
