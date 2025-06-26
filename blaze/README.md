@@ -289,6 +289,7 @@ The compiler integrates with Sentry for automatic error tracking. Errors are log
 
 - [Language Specification](docs/LANGUAGE_SPEC.md) - Complete syntax reference
 - [Why Blaze Syntax](docs/WHY_BLAZE_SYNTAX.md) - **Why the syntax is better, not just different**
+- [Punctuation Deep Dive](docs/PUNCTUATION_DEEP_DIVE.md) - **Complete guide to every symbol's meaning**
 - [Solid Numbers Implementation](docs/SOLID_NUMBERS_IMPLEMENTATION.md) - In-depth explanation
 - [GGGX Framework](docs/GGGX_FRAMEWORK.md) - Computational feasibility analysis
 - [Time Travel Specification](docs/TIME_TRAVEL_SPEC.md) - Temporal debugging features
