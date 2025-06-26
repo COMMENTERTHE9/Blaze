@@ -1,0 +1,131 @@
+# Blaze Flow Visualization - See How Data Moves
+
+# Traditional languages hide flow in parentheses and commas
+# Blaze makes flow VISIBLE with / and ^
+
+# EXAMPLE 1: Simple Pipeline
+# Data flows from left to right through functions
+
+var.v-raw-data-[100]
+var.v-validated-[^validate/ raw-data]      # raw-data flows into validate
+var.v-processed-[^process/ validated]       # validated flows into process  
+var.v-final-[^finalize/ processed]         # processed flows into finalize
+
+print/ "Pipeline result: " \
+print/ final \
+
+
+# EXAMPLE 2: Conditional Flow Paths
+# See how control flow branches
+
+|smart_processor| verb.can<
+    # Parameters flow in through the function slash
+    if/ ^is_valid/ input <              # input flows to validation
+        # Valid path
+        var.v-result-[^calculate/ input]
+        if/ result > 100 <              # result flows to comparison
+            print/ "Big result!" \
+            ^handle_big/ result         # result flows to handler
+        :> else <
+            print/ "Normal result" \
+            ^handle_normal/ result
+        :>
+    :> else <
+        # Invalid path  
+        print/ "Invalid input!" \
+        ^log_error/ input               # input flows to error log
+    :>
+:>
+
+
+# EXAMPLE 3: Multi-Stage Processing
+# Watch data transform through stages
+
+|data_pipeline| verb.can<
+    # Stage 1: Input flows in
+    var.v-stage1-[^read_data/]
+    print/ "Stage 1: Read " \
+    print/ stage1 \
+    
+    # Stage 2: Transform
+    var.v-stage2-[^transform/ stage1]
+    print/ "Stage 2: Transformed " \
+    print/ stage2 \
+    
+    # Stage 3: Validate
+    if/ ^validate/ stage2 <
+        var.v-stage3-[^optimize/ stage2]
+        print/ "Stage 3: Optimized " \
+        print/ stage3 \
+        
+        # Stage 4: Output
+        ^write_output/ stage3
+        print/ "Pipeline complete!" \
+    :> else <
+        print/ "Validation failed!" \
+    :>
+:>
+
+
+# EXAMPLE 4: Loop Flow Patterns
+# See how iteration flows
+
+var.v-counter-[0]
+
+# Flow enters the while condition
+while/ counter < 5 <
+    print/ "Count: " \
+    print/ counter \
+    
+    # Update flows back to condition
+    counter = counter + 1
+    
+    # Conditional flow within loop
+    if/ counter == 3 <
+        print/ "Middle reached!" \
+    :>
+:>
+
+
+# EXAMPLE 5: Function Composition
+# Functions flow into each other
+
+|compose_example| verb.can<
+    # Traditional: result = h(g(f(x)))
+    # Blaze: See the flow!
+    
+    var.v-x-[10]
+    var.v-step1-[^f/ x]        # x flows to f
+    var.v-step2-[^g/ step1]    # step1 flows to g  
+    var.v-result-[^h/ step2]   # step2 flows to h
+    
+    # Or in one line - still see the flow
+    var.v-composed-[^h/ ^g/ ^f/ x]
+    
+    print/ result \
+:>
+
+
+# EXAMPLE 6: Error Flow Handling
+# Errors flow through defined paths
+
+|safe_operation| verb.can<
+    var.v-data-[^risky_read/]
+    
+    if/ data == null <
+        # Error flow path
+        print/ "Error: No data!" \
+        ^log_error/ "Read failed"
+        return/ -1              # Error flows out
+    :>
+    
+    # Success flow continues
+    var.v-processed-[^process/ data]
+    return/ processed           # Success flows out
+:>
+
+
+# THE KEY INSIGHT:
+# In Blaze, you don't parse nested parentheses
+# You follow the flow arrows (/) and elevations (^)
+# Code becomes a readable flow diagram!

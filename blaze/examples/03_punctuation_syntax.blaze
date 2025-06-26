@@ -1,21 +1,126 @@
 # Punctuation Has Meaning - Not Just Decoration
+# Every single character tells you something about data flow and structure
 
-# Variable declaration: dot notation shows type and purpose
-var.v-count-[0]        # .v = value type
-var.f-ratio-[3.14]     # .f = float type  
-var.d-solid-["42!"]    # .d = solid number type
+# PART 1: Variable Declaration Syntax
+# The dot (.) separates category from type - no guessing!
+var.v-count-[0]              # .v = value (generic integer)
+var.f-ratio-[3.14]           # .f = float type  
+var.d-solid-["42!"]          # .d = solid number (with barrier!)
+var.s-message-["Hello"]      # .s = string type
+var.b-flag-[true]            # .b = boolean type
 
-# Functions use pipes - visual boundaries
-|calculate| verb.can<
+# The dash (-) creates readable multi-part names
+var.v-user-login-count-[0]   # Much clearer than userLoginCount
+var.f-circle-area-calc-[0.0] # Natural word boundaries
+
+# Square brackets [...] contain the value - not parentheses!
+var.v-computed-[10 + 20]     # Value container, not function call
+
+
+# PART 2: Function Definition - Visual Boundaries
+|calculate| verb.can<        # | pipes | = visual walls around name
+    # verb.can = "this verb can do something"
     var.v-result-[count * 2]
-    print/ result \
+    print/ result \          # / = output flows through print
+:>                          # :> = clear scope end (not just })
+
+# Why |name|? Your brain instantly sees function boundaries:
+|very_long_function_name_here| verb.can<
+    # Even with long names, the pipes make it clear
 :>
 
-# Function calls use caret - shows "lifting up" to function
-^calculate/
 
-# Operators tell you what they do
-var.v-bits-[5 <<. 2]   # Shift bits left (<<.)
-var.v-mask-[0xFF &&. 0x0F]  # Bitwise AND (&&.)
+# PART 3: Function Invocation - The Caret Elevation
+^calculate/                  # ^ = elevate to function level
+                            # / = invoke/flow into function
 
-print/ "Every symbol has purpose!" \
+# With parameters - they flow through the slash
+^process/ input_data output_buffer
+
+# Compare to traditional: process(input_data, output_buffer)
+# In Blaze you SEE the elevation and flow!
+
+
+# PART 4: Control Flow - Everything Flows
+if/ count > 10 <            # Condition flows into if via /
+    print/ "Big count!" \   
+    ^handle_big_count/
+:> else <                   # :> ends scope, else opens new <
+    print/ "Small count" \
+:>
+
+# Loops show flow too
+while/ count < 100 <        # Condition flows into while
+    count = count + 1       # No \ needed - not output
+    if/ count % 10 == 0 <   # Nested flow
+        print/ count \      # Output needs \
+    :>
+:>
+
+
+# PART 5: Operators With Meaning
+# Logical operators - clean and simple
+var.v-logical-[true && false]    # Logical AND
+var.v-either-[true || false]     # Logical OR
+
+# Bitwise operators - the dot (.) means "bits"!
+var.v-bits-[5 <<. 2]            # Left shift BITS by 2
+var.v-mask-[0xFF &&. 0x0F]      # Bitwise AND operation
+var.v-flipped-[~~. 0xFF]        # Bitwise NOT operation
+var.v-xor-[a ^^. b]             # Bitwise XOR
+
+# Why the dot? It literally means "operate on the bits"
+# No confusion between && (logical) and &&. (bitwise)
+
+
+# PART 6: Output Statements - The Backslash Boundary
+print/ "Every" \            # \ marks output boundary
+print/ "symbol" \           # Each output statement
+print/ "has" \              # needs its own terminator
+print/ "purpose!" \         # because output crosses boundaries
+
+# Other output forms
+txt/ "Plain text output" \  # Different output methods
+out/ computed_value \       # but all use \ to terminate
+fmt/ "Value: ", value \     # because they output to world
+
+
+# PART 7: Complex Example - See The Flow
+|demonstrate_flow| verb.can<
+    # Input phase - data flows in
+    var.v-input-[^read_user_input/]
+    
+    # Process phase - elevate to functions
+    if/ ^validate/ input <
+        var.v-processed-[^transform/ input]
+        var.v-result-[^calculate/ processed]
+        
+        # Output phase - results flow out
+        print/ "Result: " \
+        print/ result \
+    :> else <
+        print/ "Invalid input!" \
+    :>
+:>
+
+# The flow is visible:
+# 1. ^ elevates to functions
+# 2. / shows direction
+# 3. < :> show scope
+# 4. \ shows output boundaries
+
+^demonstrate_flow/
+
+
+# PART 8: Why Not Parentheses Everywhere?
+# Traditional: function(param1, param2)
+# Blaze:      ^function/ param1 param2
+
+# Traditional: if (condition) { }
+# Blaze:      if/ condition < :>
+
+# Traditional: print("Hello");
+# Blaze:      print/ "Hello" \
+
+# Every Blaze punctuation mark has ONE job
+# Not overloaded for multiple purposes!
