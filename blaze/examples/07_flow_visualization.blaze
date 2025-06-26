@@ -1,7 +1,8 @@
 # Blaze Flow Visualization - See How Data Moves
 
-# Traditional languages hide flow in parentheses and commas
-# Blaze makes flow VISIBLE with / and ^
+# CORRECTION: This example had WRONG information!
+# / is NOT flow - it's just a separator
+# The REAL flow operators are: < > << >> </<
 
 # EXAMPLE 1: Simple Pipeline
 # Data flows from left to right through functions
