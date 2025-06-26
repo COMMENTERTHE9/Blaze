@@ -1,0 +1,21 @@
+# Punctuation Has Meaning - Not Just Decoration
+
+# Variable declaration: dot notation shows type and purpose
+var.v-count-[0]        # .v = value type
+var.f-ratio-[3.14]     # .f = float type  
+var.d-solid-["42!"]    # .d = solid number type
+
+# Functions use pipes - visual boundaries
+|calculate| verb.can<
+    var.v-result-[count * 2]
+    print/ result \
+:>
+
+# Function calls use caret - shows "lifting up" to function
+^calculate/
+
+# Operators tell you what they do
+var.v-bits-[5 <<. 2]   # Shift bits left (<<.)
+var.v-mask-[0xFF &&. 0x0F]  # Bitwise AND (&&.)
+
+print/ "Every symbol has purpose!" \

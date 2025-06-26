@@ -1,0 +1,24 @@
+# Direct x86-64 Machine Code - No Runtime, No Dependencies
+
+# Blaze compiles DIRECTLY to machine code
+# No libc, no runtime, no garbage collector overhead
+
+# This becomes pure x86-64 assembly:
+var.v-fast_counter-[0]
+
+# Loop unrolled at compile time for speed
+repeat/ 1000 <
+    fast_counter = fast_counter + 1
+:>
+
+# Direct syscall - no wrapper functions
+syscall.write<1, "Direct to kernel!\\n", 18>
+
+# Inline assembly when you need it
+asm<
+    mov rax, 60
+    xor rdi, rdi
+    ; Direct exit syscall
+:>
+
+print/ "Faster than C - we skip the middleman!" \

@@ -88,4 +88,28 @@ clean:
 run: $(TARGET)
 	./$(TARGET)
 
-.PHONY: all clean run debug
+# Test target
+test: $(TARGET)
+	@echo "Running Blaze compiler tests..."
+	@echo "Test 1: Basic print"
+	@echo 'print/ "Hello from test!" \' > test_basic.blaze
+	@./$(TARGET) test_basic.blaze test_basic_out
+	@./test_basic_out
+	@rm -f test_basic.blaze test_basic_out
+	@echo "Test 2: Variables"
+	@echo 'var.v-x-[42]' > test_var.blaze
+	@echo 'print/ x \' >> test_var.blaze
+	@./$(TARGET) test_var.blaze test_var_out
+	@./test_var_out
+	@rm -f test_var.blaze test_var_out
+	@echo "Test 3: Math operations"
+	@echo 'var.v-a-[10]' > test_math.blaze
+	@echo 'var.v-b-[5]' >> test_math.blaze
+	@echo 'var.v-sum-[a + b]' >> test_math.blaze
+	@echo 'print/ sum \' >> test_math.blaze
+	@./$(TARGET) test_math.blaze test_math_out
+	@./test_math_out
+	@rm -f test_math.blaze test_math_out
+	@echo "All tests passed!"
+
+.PHONY: all clean run debug test

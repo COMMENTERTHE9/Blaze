@@ -1,0 +1,28 @@
+# GGGX Framework - Know If It Will Work Before You Run It
+
+# Function with GGGX zone classification
+|risky_computation| verb.can<
+    gggx.zone<"RED">  # This might not finish!
+    
+    var.v-n-[1000000]
+    while/ n > 0 <
+        var.v-factors-[factorize/ n]
+        n = n - 1
+    :>
+:>
+
+# GGGX predicts: Will it finish?
+if/ gggx.predict<^risky_computation/> == "GREEN" <
+    ^risky_computation/
+:> else <
+    print/ "Too risky - might hang forever!" \
+:>
+
+# Safe computation
+|safe_calc| verb.can<
+    gggx.zone<"GREEN">  # Guaranteed to finish
+    var.v-sum-[1 + 2 + 3]
+    print/ sum \
+:>
+
+^safe_calc/  # Always runs!

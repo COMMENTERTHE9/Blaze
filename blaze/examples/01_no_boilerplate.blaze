@@ -1,0 +1,6 @@
+# Blaze: Zero Boilerplate
+# Compare this to C's #include <stdio.h>, int main(), return 0, etc.
+
+print/ "Direct to the point!" \
+print/ "No headers, no main, no return" \
+print/ "Just pure logic" \

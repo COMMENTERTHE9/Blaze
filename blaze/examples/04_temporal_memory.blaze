@@ -1,0 +1,20 @@
+# Temporal Memory Zones - Time Travel Debugging Built-In
+
+# Mark temporal checkpoint
+temporal.checkpoint<"before_calculation">
+
+var.v-x-[100]
+var.v-y-[x * 2]
+
+# Oops, wrong calculation? Jump back!
+# temporal.rewind<"before_calculation">
+# Now x and y don't exist anymore!
+
+# Memory zones for automatic cleanup
+zone.enter<"temp_calc">
+    var.v-huge_array-[generate_data/]
+    var.v-result-[process/ huge_array]
+zone.exit<"temp_calc">
+# huge_array automatically freed!
+
+print/ "Time travel is real in Blaze!" \
