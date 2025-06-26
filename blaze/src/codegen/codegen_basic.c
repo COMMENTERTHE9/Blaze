@@ -431,6 +431,14 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
             break;
         }
         
+        case NODE_FUNC_CALL: {
+            // Handle function calls in expressions
+            print_str("[EXPR] Generating function call\n");
+            generate_func_call(buf, nodes, expr_idx, symbols, string_pool);
+            // Result is in RAX (for integers) or XMM0 (for floats)
+            break;
+        }
+        
         case NODE_BINARY_OP: {
             // Evaluate binary operation
             uint16_t left_idx = expr->data.binary.left_idx;
