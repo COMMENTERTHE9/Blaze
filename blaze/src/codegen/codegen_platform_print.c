@@ -5,6 +5,7 @@
 extern void emit_mov_reg_imm64(CodeBuffer* buf, X64Register reg, uint64_t value);
 extern void emit_mov_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
 extern void emit_mov_mem_reg(CodeBuffer* buf, X64Register base, int32_t offset, X64Register src);
+extern void emit_mov_reg_mem(CodeBuffer* buf, X64Register dst, X64Register base, int32_t offset);
 extern void emit_syscall(CodeBuffer* buf);
 extern void emit_byte(CodeBuffer* buf, uint8_t byte);
 extern void emit_sub_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
@@ -12,6 +13,7 @@ extern void emit_add_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
 extern void emit_call_reg(CodeBuffer* buf, X64Register reg);
 extern void emit_push_reg(CodeBuffer* buf, X64Register reg);
 extern void emit_pop_reg(CodeBuffer* buf, X64Register reg);
+extern void emit_lea(CodeBuffer* buf, X64Register dst, X64Register base, int32_t offset);
 
 // Platform-specific string output
 void emit_platform_print_string(CodeBuffer* buf, Platform platform, 
@@ -127,17 +129,28 @@ void emit_platform_print_char(CodeBuffer* buf, Platform platform) {
             
         case PLATFORM_WINDOWS: {
             // Windows: Use WriteConsoleA for single character
-            // Save registers
+            // The character is at [RSP] when we enter
+            
+            // First, load the character before any stack modifications
+            emit_mov_reg_mem(buf, R11, RSP, 0);  // Load character into R11
+            
+            // Save all registers we'll use
+            emit_push_reg(buf, RAX);
             emit_push_reg(buf, RCX);
             emit_push_reg(buf, RDX);
             emit_push_reg(buf, R8);
             emit_push_reg(buf, R9);
             emit_push_reg(buf, R10);
-            emit_push_reg(buf, R11);
+            emit_push_reg(buf, R11);  // Save R11 with character
+            
+            // Allocate shadow space + buffer
+            emit_sub_reg_imm32(buf, RSP, 0x30);
+            
+            // Store character from R11 to our buffer location
+            emit_mov_mem_reg(buf, RSP, 0x28, R11); // Store at RSP+0x28 (after shadow)
             
             // Get console handle
             emit_mov_reg_imm64(buf, RCX, -11); // STD_OUTPUT_HANDLE
-            emit_sub_reg_imm32(buf, RSP, 0x28); // Shadow space
             
             // Call GetStdHandle
             emit_byte(buf, 0x48); emit_byte(buf, 0x8B); emit_byte(buf, 0x05);
@@ -152,10 +165,10 @@ void emit_platform_print_char(CodeBuffer* buf, Platform platform) {
             emit_mov_reg_reg(buf, R10, RAX);
             
             // Call WriteConsoleA with character
-            emit_mov_reg_reg(buf, RCX, R10);    // hConsole
-            emit_lea(buf, RDX, RSP, 0x50);      // lpBuffer (char is above our pushes)
-            emit_mov_reg_imm64(buf, R8, 1);     // nNumberOfCharsToWrite = 1
-            emit_mov_reg_reg(buf, R9, RSP);     // lpNumberOfCharsWritten
+            emit_mov_reg_reg(buf, RCX, R10);      // hConsole
+            emit_lea(buf, RDX, RSP, 0x28);        // lpBuffer (our safe location)
+            emit_mov_reg_imm64(buf, R8, 1);       // nNumberOfCharsToWrite = 1
+            emit_lea(buf, R9, RSP, 0x20);         // lpNumberOfCharsWritten
             
             // Call WriteConsoleA
             emit_byte(buf, 0x48); emit_byte(buf, 0x8B); emit_byte(buf, 0x05);
@@ -167,15 +180,16 @@ void emit_platform_print_char(CodeBuffer* buf, Platform platform) {
             emit_byte(buf, 0xFF); emit_byte(buf, 0xD0); // call rax
             
             // Clean up
-            emit_add_reg_imm32(buf, RSP, 0x28);
+            emit_add_reg_imm32(buf, RSP, 0x30);  // Remove shadow space + buffer
             
-            // Restore registers
+            // Restore registers (in reverse order)
             emit_pop_reg(buf, R11);
             emit_pop_reg(buf, R10);
             emit_pop_reg(buf, R9);
             emit_pop_reg(buf, R8);
             emit_pop_reg(buf, RDX);
             emit_pop_reg(buf, RCX);
+            emit_pop_reg(buf, RAX);
             break;
         }
             
