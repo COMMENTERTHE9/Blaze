@@ -79,46 +79,77 @@ void generate_var_def(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
 
 // Generate code for print operation
 void generate_print(CodeBuffer* buf, const char* message, uint32_t len) {
-    // Simple approach: put string inline and use lea with fixed offset
-    // jmp over string
-    emit_byte(buf, 0xEB);
-    emit_byte(buf, len);
+    // For now, embed the string directly in the code section
+    // This works for all platforms
     
-    // Remember string position
+    // Jump over the string data
+    emit_byte(buf, 0xEB);  // JMP short
+    emit_byte(buf, len);   // Skip len bytes
+    
+    // Remember where the string starts
     uint32_t string_pos = buf->position;
     
-    // Emit message bytes
+    // Embed the string bytes
     for (uint32_t i = 0; i < len; i++) {
         emit_byte(buf, message[i]);
     }
     
-    // Now we know exactly where we are, calculate back to string
-    // lea rsi, [rip - N] where N is how far back the string is
-    emit_byte(buf, 0x48);  // REX.W
-    emit_byte(buf, 0x8D);  // lea
-    emit_byte(buf, 0x35);  // modrm for rsi, [rip+disp32]
+    // Now generate platform-specific code to print the string
+    // The string is at [RIP - (current_pos - string_pos)]
     
-    // We're currently at position buf->position
-    // After these 4 bytes we'll be at buf->position + 4
-    // String is at string_pos
-    // So offset = string_pos - (buf->position + 4)
-    int32_t offset = string_pos - (buf->position + 4);
-    emit_byte(buf, offset & 0xFF);
-    emit_byte(buf, (offset >> 8) & 0xFF);
-    emit_byte(buf, (offset >> 16) & 0xFF);
-    emit_byte(buf, (offset >> 24) & 0xFF);
-    
-    // mov rax, 1 (sys_write)
-    emit_mov_reg_imm64(buf, RAX, 1);
-    
-    // mov rdi, 1 (stdout)
-    emit_mov_reg_imm64(buf, RDI, 1);
-    
-    // mov rdx, len
-    emit_mov_reg_imm64(buf, RDX, len);
-    
-    // syscall
-    emit_syscall(buf);
+    if (buf->target_platform == PLATFORM_LINUX) {
+        // lea rsi, [rip - offset]
+        emit_byte(buf, 0x48);  // REX.W
+        emit_byte(buf, 0x8D);  // LEA
+        emit_byte(buf, 0x35);  // ModRM for RSI, [RIP+disp32]
+        
+        // Calculate offset: string_pos - (current_pos + 4)
+        int32_t offset = string_pos - (buf->position + 4);
+        emit_byte(buf, offset & 0xFF);
+        emit_byte(buf, (offset >> 8) & 0xFF);
+        emit_byte(buf, (offset >> 16) & 0xFF);
+        emit_byte(buf, (offset >> 24) & 0xFF);
+        
+        // mov rax, 1 (sys_write)
+        emit_mov_reg_imm64(buf, RAX, 1);
+        
+        // mov rdi, 1 (stdout)
+        emit_mov_reg_imm64(buf, RDI, 1);
+        
+        // mov rdx, len
+        emit_mov_reg_imm64(buf, RDX, len);
+        
+        // syscall
+        emit_syscall(buf);
+    } else if (buf->target_platform == PLATFORM_WINDOWS) {
+        // For Windows, we need a different approach
+        // The simplest demonstration is to store the string and length
+        // A full implementation would require import tables or PEB walking
+        
+        // lea rdx, [rip - offset] ; string address in RDX
+        emit_byte(buf, 0x48);  // REX.W
+        emit_byte(buf, 0x8D);  // LEA
+        emit_byte(buf, 0x15);  // ModRM for RDX, [RIP+disp32]
+        
+        // Calculate offset: string_pos - (current_pos + 4)
+        int32_t offset = string_pos - (buf->position + 4);
+        emit_byte(buf, offset & 0xFF);
+        emit_byte(buf, (offset >> 8) & 0xFF);
+        emit_byte(buf, (offset >> 16) & 0xFF);
+        emit_byte(buf, (offset >> 24) & 0xFF);
+        
+        // mov r8, len ; length in R8
+        emit_mov_reg_imm64(buf, R8, len);
+        
+        // For now, just preserve the string pointer and length
+        // A real implementation would call WriteFile or WriteConsoleA
+        // This requires either:
+        // 1. Import Address Table (IAT) in the PE file
+        // 2. Runtime resolution via PEB/TEB
+        // 3. Direct syscalls (NtWriteFile)
+        
+        // We'll implement proper Windows console output in a future update
+    }
 }
 
 // Forward declarations for multi-digit support
@@ -156,11 +187,11 @@ void generate_print_number(CodeBuffer* buf, X64Register num_reg) {
     emit_sub_reg_imm32(buf, RSP, 8);
     emit_mov_reg_imm64(buf, RAX, '0');
     emit_mov_mem_reg(buf, RSP, 0, RAX);  // Store '0' at [RSP]
-    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-    emit_mov_reg_reg(buf, RSI, RSP);  // address of '0'
-    emit_mov_reg_imm64(buf, RDX, 1);  // length 1
-    emit_syscall(buf);
+    
+    // Use platform-aware character output
+    extern void emit_platform_print_char(CodeBuffer* buf, Platform platform);
+    emit_platform_print_char(buf, buf->target_platform);
+    
     emit_add_reg_imm32(buf, RSP, 8); // Clean up stack
     
     // Jump to end
@@ -206,11 +237,8 @@ void generate_print_number(CodeBuffer* buf, X64Register num_reg) {
     emit_jz(buf, 0); // placeholder
     
     // Print one digit
-    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-    emit_mov_reg_reg(buf, RSI, RSP);  // current digit on stack
-    emit_mov_reg_imm64(buf, RDX, 1);  // length 1
-    emit_syscall(buf);
+    extern void emit_platform_print_char(CodeBuffer* buf, Platform platform);
+    emit_platform_print_char(buf, buf->target_platform);
     
     emit_add_reg_imm32(buf, RSP, 8); // remove printed digit
     emit_sub_reg_imm32(buf, RBX, 1); // decrement count
@@ -232,11 +260,10 @@ void generate_print_number(CodeBuffer* buf, X64Register num_reg) {
     emit_sub_reg_imm32(buf, RSP, 8);
     emit_mov_reg_imm64(buf, RAX, '\n');
     emit_mov_mem_reg(buf, RSP, 0, RAX);  // Store newline at [RSP]
-    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-    emit_mov_reg_reg(buf, RSI, RSP);  // address of newline
-    emit_mov_reg_imm64(buf, RDX, 1);  // length 1
-    emit_syscall(buf);
+    
+    // Use platform-aware character output
+    emit_platform_print_char(buf, buf->target_platform);
+    
     emit_add_reg_imm32(buf, RSP, 8); // Clean up stack
     
     // Restore registers

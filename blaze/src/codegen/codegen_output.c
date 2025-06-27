@@ -3,42 +3,12 @@
 
 #include "blaze_internals.h"
 
-// Helper to emit string output using write syscall
-static void emit_write_string(uint8_t* output, uint32_t* offset, const char* str, uint32_t len) {
-    // MOV RAX, 1 (sys_write)
-    output[(*offset)++] = 0x48;
-    output[(*offset)++] = 0xC7;
-    output[(*offset)++] = 0xC0;
-    output[(*offset)++] = 0x01;
-    output[(*offset)++] = 0x00;
-    output[(*offset)++] = 0x00;
-    output[(*offset)++] = 0x00;
-    
-    // MOV RDI, 1 (stdout)
-    output[(*offset)++] = 0x48;
-    output[(*offset)++] = 0xC7;
-    output[(*offset)++] = 0xC7;
-    output[(*offset)++] = 0x01;
-    output[(*offset)++] = 0x00;
-    output[(*offset)++] = 0x00;
-    output[(*offset)++] = 0x00;
-    
-    // MOV RSI, string_address
-    output[(*offset)++] = 0x48;
-    output[(*offset)++] = 0xBE;
-    *(uint64_t*)(output + *offset) = (uint64_t)str;
-    *offset += 8;
-    
-    // MOV RDX, length
-    output[(*offset)++] = 0x48;
-    output[(*offset)++] = 0xC7;
-    output[(*offset)++] = 0xC2;
-    *(uint32_t*)(output + *offset) = len;
-    *offset += 4;
-    
-    // SYSCALL
-    output[(*offset)++] = 0x0F;
-    output[(*offset)++] = 0x05;
+// Helper to emit string output using platform-aware print
+static void emit_write_string(CodeBuffer* buf, const char* str, uint32_t len) {
+    // Use the platform-aware print function
+    extern void emit_platform_print_string(CodeBuffer* buf, Platform platform, 
+                                         const char* str, uint32_t len);
+    emit_platform_print_string(buf, buf->target_platform, str, len);
 }
 
 // Process print method - filters out brackets
@@ -159,7 +129,7 @@ static char* process_out_string(const char* input, char* buffer, uint32_t* out_l
 }
 
 // Main code generation for output methods
-void gen_output_method(uint8_t* output, uint32_t* offset, ASTNode* node, 
+void gen_output_method(CodeBuffer* buf, ASTNode* node, 
                       char* string_pool, SymbolTable* symbols) {
     TokenType method = node->data.output.output_type;
     
@@ -175,12 +145,12 @@ void gen_output_method(uint8_t* output, uint32_t* offset, ASTNode* node,
         
         // Debug output
         const char* debug_msg = "DEBUG: print content='";
-        emit_write_string(output, offset, debug_msg, 22);
+        emit_write_string(buf, debug_msg, 22);
         // Calculate content length
         uint32_t content_len = 0;
         while (content[content_len]) content_len++;
-        emit_write_string(output, offset, content, content_len);
-        emit_write_string(output, offset, "'\n", 2);
+        emit_write_string(buf, content, content_len);
+        emit_write_string(buf, "'\n", 2);
     }
     
     // Process based on output method
@@ -263,9 +233,9 @@ void gen_output_method(uint8_t* output, uint32_t* offset, ASTNode* node,
         temp_node.data.output.next_output = 0xFFFF; // Prevent infinite recursion
         
         // Process the next output method with our result
-        gen_output_method(output, offset, &temp_node, chain_buffer, symbols);
+        gen_output_method(buf, &temp_node, chain_buffer, symbols);
     } else {
         // No chaining - emit the output directly
-        emit_write_string(output, offset, &output_strings[str_addr_offset], processed_len);
+        emit_write_string(buf, &output_strings[str_addr_offset], processed_len);
     }
 }
