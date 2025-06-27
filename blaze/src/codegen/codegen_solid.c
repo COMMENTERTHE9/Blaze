@@ -23,6 +23,8 @@ extern void emit_add_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
 extern void emit_sub_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
 extern void emit_imul_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
 extern void emit_syscall(CodeBuffer* buf);
+extern void emit_platform_print_string(CodeBuffer* buf, Platform platform, 
+                                      const char* str, uint32_t len);
 
 // Forward declare internal functions
 void generate_inline_solid_add(CodeBuffer* buf);
@@ -318,20 +320,28 @@ static void print_literal(CodeBuffer* buf, const char* str, uint32_t len) {
         emit_byte(buf, str[i]);
     }
     
-    // lea rsi, [rip + offset]
-    emit_byte(buf, 0x48);
-    emit_byte(buf, 0x8D);
-    emit_byte(buf, 0x35);
-    int32_t offset = str_pos - (buf->position + 4);
-    emit_byte(buf, offset & 0xFF);
-    emit_byte(buf, (offset >> 8) & 0xFF);
-    emit_byte(buf, (offset >> 16) & 0xFF);
-    emit_byte(buf, (offset >> 24) & 0xFF);
-    
-    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-    emit_mov_reg_imm64(buf, RDX, len); // length
-    emit_syscall(buf);
+    if (buf->target_platform == PLATFORM_LINUX) {
+        // lea rsi, [rip + offset]
+        emit_byte(buf, 0x48);
+        emit_byte(buf, 0x8D);
+        emit_byte(buf, 0x35);
+        int32_t offset = str_pos - (buf->position + 4);
+        emit_byte(buf, offset & 0xFF);
+        emit_byte(buf, (offset >> 8) & 0xFF);
+        emit_byte(buf, (offset >> 16) & 0xFF);
+        emit_byte(buf, (offset >> 24) & 0xFF);
+        
+        emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
+        emit_mov_reg_imm64(buf, RDI, 1);  // stdout
+        emit_mov_reg_imm64(buf, RDX, len); // length
+        emit_syscall(buf);
+    } else if (buf->target_platform == PLATFORM_WINDOWS) {
+        // Use emit_platform_print_string for Windows
+        emit_platform_print_string(buf, PLATFORM_WINDOWS, str, len);
+    } else {
+        // For macOS, we need to handle differently
+        // TODO: Implement proper macOS string output
+    }
 }
 
 // Generate code to print a solid number
@@ -359,9 +369,19 @@ void generate_print_solid(CodeBuffer* buf) {
     // lea rsi, [rbx + 16]  ; Point to known digits
     emit_lea(buf, RSI, RBX, 16);
     
-    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-    emit_syscall(buf);
+    if (buf->target_platform == PLATFORM_LINUX) {
+        emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
+        emit_mov_reg_imm64(buf, RDI, 1);  // stdout
+        emit_syscall(buf);
+    } else if (buf->target_platform == PLATFORM_WINDOWS) {
+        // Windows: use NtWriteFile
+        // RSI has string pointer, RDX has length
+        extern void generate_windows_print_string(CodeBuffer* buf);
+        generate_windows_print_string(buf);
+    } else {
+        // For macOS, need platform-specific output
+        // TODO: Implement proper macOS buffer output
+    }
     
     // 2. Check if exact (barrier_type == 'x')
     // cmp byte [rbx + 4], 'x'
@@ -458,9 +478,16 @@ void generate_print_solid(CodeBuffer* buf) {
     emit_add_reg_reg(buf, RSI, RCX);
     
     // RDX already has terminal_len
-    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-    emit_syscall(buf);
+    if (buf->target_platform == PLATFORM_LINUX) {
+        emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
+        emit_mov_reg_imm64(buf, RDI, 1);  // stdout
+        emit_syscall(buf);
+    } else if (buf->target_platform == PLATFORM_WINDOWS) {
+        // Windows: use NtWriteFile
+        // RSI has string pointer, RDX has length
+        extern void generate_windows_print_string(CodeBuffer* buf);
+        generate_windows_print_string(buf);
+    }
     
     // skip_terminals:
     // skip_gap_notation:

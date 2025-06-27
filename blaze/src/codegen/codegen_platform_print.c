@@ -26,52 +26,81 @@ void emit_platform_print_string(CodeBuffer* buf, Platform platform,
             emit_syscall(buf);
             break;
             
-        case PLATFORM_WINDOWS:
-            // Windows: Inline WriteFile equivalent
-            // For a minimal implementation, we'll use direct console output
-            // This is a simplified version that works for basic output
+        case PLATFORM_WINDOWS: {
+            // Windows: Use WriteConsoleA via import table
+            // The IAT is at fixed RVA 0x2060
+            // GetStdHandle is at [0x140002060]
+            // WriteConsoleA is at [0x140002068]
             
-            // Save registers Windows ABI requires to be preserved
-            emit_push_reg(buf, RBX);
-            emit_push_reg(buf, RSI);
-            emit_push_reg(buf, RDI);
+            // Save registers we'll use
+            emit_push_reg(buf, RCX);
+            emit_push_reg(buf, RDX);
+            emit_push_reg(buf, R8);
+            emit_push_reg(buf, R9);
+            emit_push_reg(buf, R10);
+            emit_push_reg(buf, R11);
             
-            // Set up for WriteConsoleA call
-            // RCX = hConsoleOutput (-11 for stdout)
-            emit_mov_reg_imm64(buf, RCX, 0xFFFFFFFFFFFFFFF5); // STD_OUTPUT_HANDLE = -11
+            // First call GetStdHandle to get console handle
+            emit_mov_reg_imm64(buf, RCX, -11); // STD_OUTPUT_HANDLE
+            emit_sub_reg_imm32(buf, RSP, 0x28); // Shadow space + alignment
             
-            // Get console handle via GetStdHandle
-            // mov rax, GetStdHandle address (would need IAT)
-            // For now, assume handle -11 works directly
+            // Call GetStdHandle via IAT
+            // mov rax, [rip + offset_to_iat]
+            emit_byte(buf, 0x48); // REX.W
+            emit_byte(buf, 0x8B); // MOV
+            emit_byte(buf, 0x05); // ModRM for RAX, [RIP+disp32]
             
-            // RDX = lpBuffer (string address)
-            emit_mov_reg_imm64(buf, RDX, (uint64_t)str);
+            // Calculate offset to IAT entry for GetStdHandle
+            // IAT is at RVA 0x2060, we're at RVA 0x1000 + current position
+            int32_t get_std_offset = 0x2060 - (0x1000 + buf->position + 4);
+            emit_byte(buf, get_std_offset & 0xFF);
+            emit_byte(buf, (get_std_offset >> 8) & 0xFF);
+            emit_byte(buf, (get_std_offset >> 16) & 0xFF);
+            emit_byte(buf, (get_std_offset >> 24) & 0xFF);
             
-            // R8 = nNumberOfCharsToWrite
-            emit_mov_reg_imm64(buf, R8, len);
+            // call rax
+            emit_byte(buf, 0xFF);
+            emit_byte(buf, 0xD0);
             
-            // R9 = lpNumberOfCharsWritten (NULL)
-            emit_mov_reg_imm64(buf, R9, 0);
+            // Save console handle
+            emit_mov_reg_reg(buf, R10, RAX);
             
-            // For direct console output, we can use INT 0x2E (Windows syscall interface)
-            // syscall number for NtWriteFile in RAX
-            emit_mov_reg_imm64(buf, RAX, 0x08); // NtWriteFile syscall number
+            // Now call WriteConsoleA
+            // Set up parameters
+            emit_mov_reg_reg(buf, RCX, R10);      // hConsole
+            emit_mov_reg_imm64(buf, RDX, (uint64_t)str); // lpBuffer
+            emit_mov_reg_imm64(buf, R8, len);     // nNumberOfCharsToWrite
+            emit_mov_reg_reg(buf, R9, RSP);       // lpNumberOfCharsWritten (use stack)
             
-            // Set up remaining parameters
-            emit_sub_reg_imm32(buf, RSP, 0x28); // Shadow space for Windows x64 ABI
+            // Call WriteConsoleA via IAT
+            // mov rax, [rip + offset_to_iat]
+            emit_byte(buf, 0x48); // REX.W
+            emit_byte(buf, 0x8B); // MOV
+            emit_byte(buf, 0x05); // ModRM for RAX, [RIP+disp32]
             
-            // Do the syscall
-            emit_byte(buf, 0x0F);
-            emit_byte(buf, 0x05);  // syscall instruction
+            // WriteConsoleA is 8 bytes after GetStdHandle in IAT
+            int32_t write_offset = 0x2068 - (0x1000 + buf->position + 4);
+            emit_byte(buf, write_offset & 0xFF);
+            emit_byte(buf, (write_offset >> 8) & 0xFF);
+            emit_byte(buf, (write_offset >> 16) & 0xFF);
+            emit_byte(buf, (write_offset >> 24) & 0xFF);
+            
+            // call rax
+            emit_byte(buf, 0xFF);
+            emit_byte(buf, 0xD0);
             
             // Clean up shadow space
             emit_add_reg_imm32(buf, RSP, 0x28);
             
             // Restore registers
-            emit_pop_reg(buf, RDI);
-            emit_pop_reg(buf, RSI);
-            emit_pop_reg(buf, RBX);
+            emit_pop_reg(buf, R11);
+            emit_pop_reg(buf, R10);
+            emit_pop_reg(buf, R9);
+            emit_pop_reg(buf, R8);
+            emit_pop_reg(buf, RDX);
+            emit_pop_reg(buf, RCX);
             break;
+        }
             
         case PLATFORM_MACOS:
             // macOS: BSD-style syscall
@@ -96,40 +125,151 @@ void emit_platform_print_char(CodeBuffer* buf, Platform platform) {
             emit_syscall(buf);
             break;
             
-        case PLATFORM_WINDOWS:
+        case PLATFORM_WINDOWS: {
+            // Windows: Use WriteConsoleA for single character
             // Save registers
-            emit_push_reg(buf, RBX);
-            emit_push_reg(buf, RSI);
-            emit_push_reg(buf, RDI);
+            emit_push_reg(buf, RCX);
+            emit_push_reg(buf, RDX);
+            emit_push_reg(buf, R8);
+            emit_push_reg(buf, R9);
+            emit_push_reg(buf, R10);
+            emit_push_reg(buf, R11);
             
-            // Set up for console output
-            emit_mov_reg_imm64(buf, RCX, 0xFFFFFFFFFFFFFFF5); // stdout handle
-            emit_mov_reg_reg(buf, RDX, RSP);  // buffer (after pushes, RSP+24 points to char)
-            emit_add_reg_imm32(buf, RDX, 24); // Adjust for pushed registers
-            emit_mov_reg_imm64(buf, R8, 1);   // length
-            emit_mov_reg_imm64(buf, R9, 0);   // NULL
+            // Get console handle
+            emit_mov_reg_imm64(buf, RCX, -11); // STD_OUTPUT_HANDLE
+            emit_sub_reg_imm32(buf, RSP, 0x28); // Shadow space
             
-            // Shadow space
-            emit_sub_reg_imm32(buf, RSP, 0x28);
+            // Call GetStdHandle
+            emit_byte(buf, 0x48); emit_byte(buf, 0x8B); emit_byte(buf, 0x05);
+            int32_t get_offset = 0x2060 - (0x1000 + buf->position + 4);
+            emit_byte(buf, get_offset & 0xFF);
+            emit_byte(buf, (get_offset >> 8) & 0xFF);
+            emit_byte(buf, (get_offset >> 16) & 0xFF);
+            emit_byte(buf, (get_offset >> 24) & 0xFF);
+            emit_byte(buf, 0xFF); emit_byte(buf, 0xD0); // call rax
             
-            // NtWriteFile syscall
-            emit_mov_reg_imm64(buf, RAX, 0x08);
-            emit_syscall(buf);
+            // Save handle
+            emit_mov_reg_reg(buf, R10, RAX);
+            
+            // Call WriteConsoleA with character
+            emit_mov_reg_reg(buf, RCX, R10);    // hConsole
+            emit_lea(buf, RDX, RSP, 0x50);      // lpBuffer (char is above our pushes)
+            emit_mov_reg_imm64(buf, R8, 1);     // nNumberOfCharsToWrite = 1
+            emit_mov_reg_reg(buf, R9, RSP);     // lpNumberOfCharsWritten
+            
+            // Call WriteConsoleA
+            emit_byte(buf, 0x48); emit_byte(buf, 0x8B); emit_byte(buf, 0x05);
+            int32_t write_offset = 0x2068 - (0x1000 + buf->position + 4);
+            emit_byte(buf, write_offset & 0xFF);
+            emit_byte(buf, (write_offset >> 8) & 0xFF);
+            emit_byte(buf, (write_offset >> 16) & 0xFF);
+            emit_byte(buf, (write_offset >> 24) & 0xFF);
+            emit_byte(buf, 0xFF); emit_byte(buf, 0xD0); // call rax
             
             // Clean up
             emit_add_reg_imm32(buf, RSP, 0x28);
             
             // Restore registers
-            emit_pop_reg(buf, RDI);
-            emit_pop_reg(buf, RSI);
-            emit_pop_reg(buf, RBX);
+            emit_pop_reg(buf, R11);
+            emit_pop_reg(buf, R10);
+            emit_pop_reg(buf, R9);
+            emit_pop_reg(buf, R8);
+            emit_pop_reg(buf, RDX);
+            emit_pop_reg(buf, RCX);
             break;
+        }
             
         case PLATFORM_MACOS:
             emit_mov_reg_imm64(buf, RAX, 0x2000004); // write
             emit_mov_reg_imm64(buf, RDI, 1);         // stdout
             emit_mov_reg_reg(buf, RSI, RSP);
             emit_mov_reg_imm64(buf, RDX, 1);
+            emit_syscall(buf);
+            break;
+    }
+}
+
+// Platform-specific runtime string output
+// String pointer in RSI, length in RDX
+void emit_platform_print_string_runtime(CodeBuffer* buf, Platform platform) {
+    switch (platform) {
+        case PLATFORM_LINUX:
+            // Linux: direct syscall
+            emit_mov_reg_imm64(buf, RAX, 1);   // sys_write
+            emit_mov_reg_imm64(buf, RDI, 1);   // stdout
+            // RSI already has string pointer
+            // RDX already has length
+            emit_syscall(buf);
+            break;
+            
+        case PLATFORM_WINDOWS: {
+            // Windows: Use WriteConsoleA via import table
+            // String is in RSI, length is in RDX
+            
+            // Save registers
+            emit_push_reg(buf, RCX);
+            emit_push_reg(buf, RDX);
+            emit_push_reg(buf, R8);
+            emit_push_reg(buf, R9);
+            emit_push_reg(buf, R10);
+            emit_push_reg(buf, RSI); // Save string pointer
+            
+            // Get console handle
+            emit_mov_reg_imm64(buf, RCX, -11); // STD_OUTPUT_HANDLE
+            emit_sub_reg_imm32(buf, RSP, 0x28); // Shadow space
+            
+            // Call GetStdHandle
+            emit_byte(buf, 0x48); emit_byte(buf, 0x8B); emit_byte(buf, 0x05);
+            int32_t get_offset = 0x2060 - (0x1000 + buf->position + 4);
+            emit_byte(buf, get_offset & 0xFF);
+            emit_byte(buf, (get_offset >> 8) & 0xFF);
+            emit_byte(buf, (get_offset >> 16) & 0xFF);
+            emit_byte(buf, (get_offset >> 24) & 0xFF);
+            emit_byte(buf, 0xFF); emit_byte(buf, 0xD0); // call rax
+            
+            // Save handle
+            emit_mov_reg_reg(buf, R10, RAX);
+            
+            // Restore string pointer and length
+            emit_add_reg_imm32(buf, RSP, 0x28); // Remove shadow space
+            emit_pop_reg(buf, RSI); // Restore string pointer
+            
+            // Set up WriteConsoleA parameters
+            emit_mov_reg_reg(buf, RCX, R10);      // hConsole
+            emit_mov_reg_reg(buf, RDX, RSI);      // lpBuffer
+            emit_mov_reg_reg(buf, R8, RDX);       // nNumberOfCharsToWrite (was in RDX)
+            emit_mov_reg_reg(buf, R9, RSP);       // lpNumberOfCharsWritten (use stack)
+            
+            // Re-allocate shadow space for WriteConsoleA
+            emit_sub_reg_imm32(buf, RSP, 0x28);
+            
+            // Call WriteConsoleA
+            emit_byte(buf, 0x48); emit_byte(buf, 0x8B); emit_byte(buf, 0x05);
+            int32_t write_offset = 0x2068 - (0x1000 + buf->position + 4);
+            emit_byte(buf, write_offset & 0xFF);
+            emit_byte(buf, (write_offset >> 8) & 0xFF);
+            emit_byte(buf, (write_offset >> 16) & 0xFF);
+            emit_byte(buf, (write_offset >> 24) & 0xFF);
+            emit_byte(buf, 0xFF); emit_byte(buf, 0xD0); // call rax
+            
+            // Clean up
+            emit_add_reg_imm32(buf, RSP, 0x28);
+            
+            // Restore registers
+            emit_pop_reg(buf, R10);
+            emit_pop_reg(buf, R9);
+            emit_pop_reg(buf, R8);
+            emit_pop_reg(buf, RDX);
+            emit_pop_reg(buf, RCX);
+            break;
+        }
+            
+        case PLATFORM_MACOS:
+            // macOS: BSD-style syscall
+            emit_mov_reg_imm64(buf, RAX, 0x2000004); // write
+            emit_mov_reg_imm64(buf, RDI, 1);         // stdout
+            // RSI already has string pointer
+            // RDX already has length
             emit_syscall(buf);
             break;
     }

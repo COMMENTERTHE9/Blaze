@@ -5,6 +5,16 @@
 
 // Platform is defined in blaze_internals.h
 
+// Forward declarations
+extern void emit_byte(CodeBuffer* buf, uint8_t byte);
+extern void emit_mov_reg_imm64(CodeBuffer* buf, X64Register reg, uint64_t value);
+extern void emit_mov_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
+extern void emit_mov_reg_mem(CodeBuffer* buf, X64Register dst, X64Register base, int32_t offset);
+extern void emit_syscall(CodeBuffer* buf);
+extern void emit_push_reg(CodeBuffer* buf, X64Register reg);
+extern void emit_add_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
+extern void emit_sub_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
+
 // System call numbers
 typedef struct {
     uint32_t exit;
@@ -53,12 +63,34 @@ void emit_platform_exit(CodeBuffer* buf, Platform platform, int exit_code) {
             break;
             
         case PLATFORM_WINDOWS:
-            // Windows x64 - different calling convention
-            // rcx = exit code (first parameter)
+            // Windows: Call ExitProcess via import table
+            // ExitProcess is at [0x140002070] (third function in IAT)
+            
+            // Set exit code in RCX (first parameter)
             emit_mov_reg_imm64(buf, RCX, exit_code);
             
-            // For minimal PE, just return
-            // In full implementation, would call ExitProcess
+            // Allocate shadow space
+            emit_sub_reg_imm32(buf, RSP, 0x28);
+            
+            // Call ExitProcess via IAT
+            // mov rax, [rip + offset]
+            emit_byte(buf, 0x48); // REX.W
+            emit_byte(buf, 0x8B); // MOV
+            emit_byte(buf, 0x05); // ModRM for RAX, [RIP+disp32]
+            
+            // ExitProcess is at IAT offset 0x2070 (third function)
+            // We need to calculate offset from current position
+            int32_t iat_offset = 0x2070 - (0x1000 + buf->position + 4);
+            emit_byte(buf, iat_offset & 0xFF);
+            emit_byte(buf, (iat_offset >> 8) & 0xFF);
+            emit_byte(buf, (iat_offset >> 16) & 0xFF);
+            emit_byte(buf, (iat_offset >> 24) & 0xFF);
+            
+            // call rax
+            emit_byte(buf, 0xFF);
+            emit_byte(buf, 0xD0);
+            
+            // ExitProcess never returns, but add a RET just in case
             emit_byte(buf, 0xC3); // RET
             break;
             

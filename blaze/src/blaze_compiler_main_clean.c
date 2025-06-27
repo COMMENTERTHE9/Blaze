@@ -176,20 +176,33 @@ int main(int argc, char** argv) {
     
     // Detect target platform
     Platform target_platform = PLATFORM_LINUX;  // Default
-    if (argc >= 5 && argv[3][0] == '-' && argv[3][1] == '-') {
-        if (str_equals(argv[3], "--platform") && argc >= 5) {
-            if (str_equals(argv[4], "windows")) {
+    
+    // Check for platform flags
+    for (int i = 3; i < argc; i++) {
+        if (argv[i][0] == '-' && argv[i][1] == '-') {
+            // Check for --windows shorthand
+            if (str_equals(argv[i], "--windows")) {
                 target_platform = PLATFORM_WINDOWS;
                 print_str("[MAIN] Target platform: Windows\n");
-            } else if (str_equals(argv[4], "macos")) {
-                target_platform = PLATFORM_MACOS;
-                print_str("[MAIN] Target platform: macOS\n");
-            } else if (str_equals(argv[4], "linux")) {
-                target_platform = PLATFORM_LINUX;
-                print_str("[MAIN] Target platform: Linux\n");
-            } else {
-                print_str("Error: Unknown platform. Use linux, windows, or macos\n");
-                return 1;
+                break;
+            }
+            // Check for --platform <name>
+            else if (str_equals(argv[i], "--platform") && i + 1 < argc) {
+                i++; // Move to platform name
+                if (str_equals(argv[i], "windows")) {
+                    target_platform = PLATFORM_WINDOWS;
+                    print_str("[MAIN] Target platform: Windows\n");
+                } else if (str_equals(argv[i], "macos")) {
+                    target_platform = PLATFORM_MACOS;
+                    print_str("[MAIN] Target platform: macOS\n");
+                } else if (str_equals(argv[i], "linux")) {
+                    target_platform = PLATFORM_LINUX;
+                    print_str("[MAIN] Target platform: Linux\n");
+                } else {
+                    print_str("Error: Unknown platform. Use linux, windows, or macos\n");
+                    return 1;
+                }
+                break;
             }
         }
     }

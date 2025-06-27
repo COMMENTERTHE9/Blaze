@@ -34,6 +34,7 @@ SRCS = src/blaze_compiler_main_clean.c \
        src/codegen/codegen_init_minimal.c \
        src/codegen/codegen_platform.c \
        src/codegen/codegen_platform_print.c \
+       src/codegen/codegen_windows_console.c \
        src/codegen/codegen_output.c \
        src/codegen/scalable_codegen.c \
        src/codegen/elf_generator.c \

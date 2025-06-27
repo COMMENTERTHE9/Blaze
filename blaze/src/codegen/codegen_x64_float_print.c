@@ -15,6 +15,7 @@ extern void emit_pop_reg(CodeBuffer* buf, X64Register reg);
 extern void emit_mov_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
 extern void emit_add_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
 extern void emit_syscall(CodeBuffer* buf);
+extern void emit_platform_print_char(CodeBuffer* buf, Platform platform);
 
 // Forward declarations for float conversion
 extern void emit_sub_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
@@ -79,11 +80,7 @@ void generate_print_float(CodeBuffer* buf) {
     emit_mov_reg_imm64(buf, R8, 1); // Set sign flag
     emit_mov_reg_imm64(buf, RAX, '-');
     emit_push_reg(buf, RAX);
-    emit_mov_reg_imm64(buf, RAX, 1);  // sys_write
-    emit_mov_reg_imm64(buf, RDI, 1);  // stdout
-    emit_mov_reg_reg(buf, RSI, RSP);
-    emit_mov_reg_imm64(buf, RDX, 1);
-    emit_syscall(buf);
+    emit_platform_print_char(buf, buf->target_platform);
     emit_add_reg_imm32(buf, RSP, 8);
     
     // Negate XMM1 (multiply by -1.0)
@@ -117,11 +114,7 @@ void generate_print_float(CodeBuffer* buf) {
     // Print '0'
     emit_mov_reg_imm64(buf, RAX, '0');
     emit_push_reg(buf, RAX);
-    emit_mov_reg_imm64(buf, RAX, 1);
-    emit_mov_reg_imm64(buf, RDI, 1);
-    emit_mov_reg_reg(buf, RSI, RSP);
-    emit_mov_reg_imm64(buf, RDX, 1);
-    emit_syscall(buf);
+    emit_platform_print_char(buf, buf->target_platform);
     emit_add_reg_imm32(buf, RSP, 8);
     
     // Jump to decimal point
@@ -156,11 +149,7 @@ void generate_print_float(CodeBuffer* buf) {
     uint32_t print_done_jump = buf->position;
     emit_jz(buf, 0); // placeholder
     
-    emit_mov_reg_imm64(buf, RAX, 1);
-    emit_mov_reg_imm64(buf, RDI, 1);
-    emit_mov_reg_reg(buf, RSI, RSP);
-    emit_mov_reg_imm64(buf, RDX, 1);
-    emit_syscall(buf);
+    emit_platform_print_char(buf, buf->target_platform);
     emit_add_reg_imm32(buf, RSP, 8);
     emit_sub_reg_imm32(buf, RBX, 1);
     int8_t print_loop_offset = print_loop_start - (buf->position + 2);
@@ -178,11 +167,7 @@ void generate_print_float(CodeBuffer* buf) {
     // Print decimal point
     emit_mov_reg_imm64(buf, RAX, '.');
     emit_push_reg(buf, RAX);
-    emit_mov_reg_imm64(buf, RAX, 1);
-    emit_mov_reg_imm64(buf, RDI, 1);
-    emit_mov_reg_reg(buf, RSI, RSP);
-    emit_mov_reg_imm64(buf, RDX, 1);
-    emit_syscall(buf);
+    emit_platform_print_char(buf, buf->target_platform);
     emit_add_reg_imm32(buf, RSP, 8);
     
     // Restore integer part from stack
@@ -213,11 +198,7 @@ void generate_print_float(CodeBuffer* buf) {
     // Print first decimal digit
     emit_add_reg_imm32(buf, RAX, '0');
     emit_push_reg(buf, RAX);
-    emit_mov_reg_imm64(buf, RAX, 1);
-    emit_mov_reg_imm64(buf, RDI, 1);
-    emit_mov_reg_reg(buf, RSI, RSP);
-    emit_mov_reg_imm64(buf, RDX, 1);
-    emit_syscall(buf);
+    emit_platform_print_char(buf, buf->target_platform);
     emit_add_reg_imm32(buf, RSP, 8);
     
     // Restore first digit
@@ -242,21 +223,13 @@ void generate_print_float(CodeBuffer* buf) {
     // Print second decimal digit
     emit_add_reg_imm32(buf, RAX, '0');
     emit_push_reg(buf, RAX);
-    emit_mov_reg_imm64(buf, RAX, 1);
-    emit_mov_reg_imm64(buf, RDI, 1);
-    emit_mov_reg_reg(buf, RSI, RSP);
-    emit_mov_reg_imm64(buf, RDX, 1);
-    emit_syscall(buf);
+    emit_platform_print_char(buf, buf->target_platform);
     emit_add_reg_imm32(buf, RSP, 8);
     
     // Print newline
     emit_mov_reg_imm64(buf, RAX, '\n');
     emit_push_reg(buf, RAX);
-    emit_mov_reg_imm64(buf, RAX, 1);
-    emit_mov_reg_imm64(buf, RDI, 1);
-    emit_mov_reg_reg(buf, RSI, RSP);
-    emit_mov_reg_imm64(buf, RDX, 1);
-    emit_syscall(buf);
+    emit_platform_print_char(buf, buf->target_platform);
     emit_add_reg_imm32(buf, RSP, 8);
     
     // Restore XMM registers

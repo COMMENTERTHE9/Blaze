@@ -151,10 +151,39 @@ int main(int argc, char** argv) {
     execution_plan[0].dep_count = 0;
     
     // Parse command line arguments
-    if (argc != 3) {
-        const char* usage = "Usage: blaze <input.blaze> <output>\n";
+    if (argc < 3 || argc > 4) {
+        const char* usage = "Usage: blaze <input.blaze> <output> [--windows]\n";
         write(1, usage, str_len(usage));
         return 1;
+    }
+    
+    // Check for platform override
+    Platform target_platform = get_default_platform();
+    if (argc >= 4) {
+        // Check third or fourth argument for platform flag
+        for (int i = 3; i < argc; i++) {
+            const char* flag = argv[i];
+            if (flag[0] == '-' && flag[1] == '-') {
+                if (flag[2] == 'w' && flag[3] == 'i' && flag[4] == 'n' && 
+                    flag[5] == 'd' && flag[6] == 'o' && flag[7] == 'w' && 
+                    flag[8] == 's' && flag[9] == '\0') {
+                    target_platform = PLATFORM_WINDOWS;
+                    print_str("[MAIN] Targeting Windows platform\n");
+                } else if (flag[2] == 'p' && flag[3] == 'l' && flag[4] == 'a' &&
+                          flag[5] == 't' && flag[6] == 'f' && flag[7] == 'o' &&
+                          flag[8] == 'r' && flag[9] == 'm' && flag[10] == '\0' &&
+                          i + 1 < argc) {
+                    // --platform <name>
+                    const char* platform = argv[++i];
+                    if (platform[0] == 'w' && platform[1] == 'i' && platform[2] == 'n' &&
+                        platform[3] == 'd' && platform[4] == 'o' && platform[5] == 'w' &&
+                        platform[6] == 's' && platform[7] == '\0') {
+                        target_platform = PLATFORM_WINDOWS;
+                        print_str("[MAIN] Targeting Windows platform\n");
+                    }
+                }
+            }
+        }
     }
     
     // Read source file
@@ -265,6 +294,7 @@ int main(int argc, char** argv) {
     code_buf.entry_point = 0;
     code_buf.main_call_offset_pos = 0;
     code_buf.bss_offsets_need_patch = false;
+    code_buf.target_platform = target_platform;
     
     // Initialize runtime first
     extern void generate_runtime_init_minimal(CodeBuffer* buf);
@@ -295,7 +325,7 @@ int main(int argc, char** argv) {
     // generate_var_storage_cleanup(&code_buf);
     
     // Exit cleanly
-    emit_platform_exit(&code_buf, PLATFORM_LINUX, 0);
+    emit_platform_exit(&code_buf, code_buf.target_platform, 0);
     
     // Final error check before writing
     if (code_buf.has_error) {
@@ -305,8 +335,12 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    // Write executable
-    generate_elf_executable(code_buffer, code_buf.position, argv[2]);
+    // Write executable based on platform
+    if (code_buf.target_platform == PLATFORM_WINDOWS) {
+        generate_pe_executable(code_buffer, code_buf.position, argv[2]);
+    } else {
+        generate_elf_executable(code_buffer, code_buf.position, argv[2]);
+    }
     
     SENTRY_BREADCRUMB("complete", "Compilation successful");
     SENTRY_CLEANUP();
