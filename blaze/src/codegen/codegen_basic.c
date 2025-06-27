@@ -122,11 +122,51 @@ void generate_print(CodeBuffer* buf, const char* message, uint32_t len) {
         // syscall
         emit_syscall(buf);
     } else if (buf->target_platform == PLATFORM_WINDOWS) {
-        // For Windows, we need a different approach
-        // The simplest demonstration is to store the string and length
-        // A full implementation would require import tables or PEB walking
+        // Windows: Use imported WriteConsoleA function
+        // The IAT is at RVA 0x2060 (idata_rva + 0x60)
+        // GetStdHandle is at [0x140002060]
+        // WriteConsoleA is at [0x140002068]
         
-        // lea rdx, [rip - offset] ; string address in RDX
+        // Preserve R12 (we'll use it to store the console handle)
+        emit_push_reg(buf, R12);
+        
+        // First, get console handle using GetStdHandle
+        // mov rcx, -11 (STD_OUTPUT_HANDLE)
+        emit_mov_reg_imm64(buf, RCX, 0xFFFFFFFFFFFFFFF5);
+        
+        // Allocate shadow space
+        emit_sub_reg_imm32(buf, RSP, 0x28);
+        
+        // Call GetStdHandle via IAT
+        // We need to use RIP-relative addressing to access the IAT
+        // The IAT is at virtual address 0x2060, and we're executing from 0x1000
+        // So we need to calculate the offset from current RIP
+        // mov rax, [rip + offset]
+        emit_byte(buf, 0x48); // REX.W
+        emit_byte(buf, 0x8B); // MOV
+        emit_byte(buf, 0x05); // ModRM for RAX, [RIP+disp32]
+        
+        // Calculate offset from current position to IAT entry
+        // Assuming we're at around 0x1000 + current position
+        // and IAT is at 0x2060
+        int32_t iat_offset = 0x2060 - (0x1000 + buf->position + 4);
+        emit_byte(buf, iat_offset & 0xFF);
+        emit_byte(buf, (iat_offset >> 8) & 0xFF);
+        emit_byte(buf, (iat_offset >> 16) & 0xFF);
+        emit_byte(buf, (iat_offset >> 24) & 0xFF);
+        
+        // call rax
+        emit_byte(buf, 0xFF);
+        emit_byte(buf, 0xD0);
+        
+        // Save handle in R12 (preserved across calls)
+        emit_mov_reg_reg(buf, R12, RAX);
+        
+        // Clean up shadow space
+        emit_add_reg_imm32(buf, RSP, 0x28);
+        
+        // Now call WriteConsoleA
+        // lea rdx, [rip - offset] ; Buffer
         emit_byte(buf, 0x48);  // REX.W
         emit_byte(buf, 0x8D);  // LEA
         emit_byte(buf, 0x15);  // ModRM for RDX, [RIP+disp32]
@@ -138,17 +178,55 @@ void generate_print(CodeBuffer* buf, const char* message, uint32_t len) {
         emit_byte(buf, (offset >> 16) & 0xFF);
         emit_byte(buf, (offset >> 24) & 0xFF);
         
-        // mov r8, len ; length in R8
+        // Set up parameters for WriteConsoleA
+        // RCX = hConsoleOutput (from R12)
+        emit_mov_reg_reg(buf, RCX, R12);
+        
+        // RDX = lpBuffer (already set by LEA above)
+        
+        // R8 = nNumberOfCharsToWrite
         emit_mov_reg_imm64(buf, R8, len);
         
-        // For now, just preserve the string pointer and length
-        // A real implementation would call WriteFile or WriteConsoleA
-        // This requires either:
-        // 1. Import Address Table (IAT) in the PE file
-        // 2. Runtime resolution via PEB/TEB
-        // 3. Direct syscalls (NtWriteFile)
+        // R9 = lpNumberOfCharsWritten (NULL)
+        emit_xor_reg_reg(buf, R9, R9);
         
-        // We'll implement proper Windows console output in a future update
+        // [RSP+0x20] = lpReserved (NULL) - 5th parameter
+        // Allocate shadow space + space for 5th parameter
+        emit_sub_reg_imm32(buf, RSP, 0x28);
+        
+        // mov qword [rsp+0x20], 0
+        emit_byte(buf, 0x48); // REX.W
+        emit_byte(buf, 0xC7); // MOV
+        emit_byte(buf, 0x44); // ModRM
+        emit_byte(buf, 0x24); // SIB
+        emit_byte(buf, 0x20); // disp8
+        emit_byte(buf, 0x00); // imm32 (0)
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        
+        // Call WriteConsoleA via IAT
+        // mov rax, [rip + offset]
+        emit_byte(buf, 0x48); // REX.W
+        emit_byte(buf, 0x8B); // MOV
+        emit_byte(buf, 0x05); // ModRM for RAX, [RIP+disp32]
+        
+        // WriteConsoleA is at IAT offset 0x2068
+        iat_offset = 0x2068 - (0x1000 + buf->position + 4);
+        emit_byte(buf, iat_offset & 0xFF);
+        emit_byte(buf, (iat_offset >> 8) & 0xFF);
+        emit_byte(buf, (iat_offset >> 16) & 0xFF);
+        emit_byte(buf, (iat_offset >> 24) & 0xFF);
+        
+        // call rax
+        emit_byte(buf, 0xFF);
+        emit_byte(buf, 0xD0);
+        
+        // Clean up stack
+        emit_add_reg_imm32(buf, RSP, 0x28);
+        
+        // Restore R12
+        emit_pop_reg(buf, R12);
     }
 }
 
@@ -345,6 +423,12 @@ bool is_float_expression_impl(ASTNode* nodes, uint16_t expr_idx, char* string_po
             print_str("\n");
             
             return is_float;
+        }
+        
+        case NODE_FUNC_CALL: {
+            // All math functions return floats
+            print_str("[FLOAT_CHECK] NODE_FUNC_CALL - math functions return float\n");
+            return true;
         }
         
         default:
