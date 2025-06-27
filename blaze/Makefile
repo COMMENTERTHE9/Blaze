@@ -75,10 +75,12 @@ debug: include/blaze_internals.h
 	       src/codegen/codegen_init_minimal.c \
 	       src/codegen/codegen_platform.c \
 	       src/codegen/codegen_platform_print.c \
+	       src/codegen/codegen_windows_console.c \
 	       src/codegen/codegen_output.c \
 	       src/codegen/elf_generator.c \
 	       src/codegen/pe_generator.c \
 	       src/runtime/memory_manager.c \
+	       src/runtime/temporal_gc.c \
 	       src/runtime/blaze_stdlib.c \
 	       src/simple_sentry.c \
 	       src/sentry_http.c
