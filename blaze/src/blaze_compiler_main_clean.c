@@ -23,7 +23,7 @@ extern void emit_platform_exit(CodeBuffer* buf, Platform platform, int exit_code
 extern void emit_sub_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
 extern void gen_timeline_operation(uint8_t* output, uint32_t* offset, ASTNode* node, 
                                   char* string_pool, SymbolTable* symbols);
-extern void gen_output_method(uint8_t* output, uint32_t* offset, ASTNode* node,
+extern void gen_output_method(CodeBuffer* buf, ASTNode* node,
                              char* string_pool, SymbolTable* symbols);
 extern void gen_inline_asm(uint8_t* output, uint32_t* offset, ASTNode* node,
                           char* string_pool, SymbolTable* symbols);
@@ -95,6 +95,17 @@ static uint32_t read_file(const char* filename, char* buffer, uint32_t max_size)
     return (bytes_read < 0) ? 0 : bytes_read;
 }
 
+// Utility function for string comparison
+static bool str_equals(const char* s1, const char* s2) {
+    while (*s1 && *s2) {
+        if (*s1 != *s2) return false;
+        s1++;
+        s2++;
+    }
+    return *s1 == *s2;
+}
+
+
 // Forward declarations for codegen
 extern void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                               SymbolTable* symbols, char* string_pool);
@@ -157,10 +168,30 @@ int main(int argc, char** argv) {
     }
     
     // Parse command line arguments
-    if (argc != 3) {
-        const char* usage = "Usage: blaze <input.blaze> <output>\n";
+    if (argc < 3) {
+        const char* usage = "Usage: blaze <input.blaze> <output> [--platform linux|windows|macos]\n";
         write(1, usage, str_len(usage));
         return 1;
+    }
+    
+    // Detect target platform
+    Platform target_platform = PLATFORM_LINUX;  // Default
+    if (argc >= 5 && argv[3][0] == '-' && argv[3][1] == '-') {
+        if (str_equals(argv[3], "--platform") && argc >= 5) {
+            if (str_equals(argv[4], "windows")) {
+                target_platform = PLATFORM_WINDOWS;
+                print_str("[MAIN] Target platform: Windows\n");
+            } else if (str_equals(argv[4], "macos")) {
+                target_platform = PLATFORM_MACOS;
+                print_str("[MAIN] Target platform: macOS\n");
+            } else if (str_equals(argv[4], "linux")) {
+                target_platform = PLATFORM_LINUX;
+                print_str("[MAIN] Target platform: Linux\n");
+            } else {
+                print_str("Error: Unknown platform. Use linux, windows, or macos\n");
+                return 1;
+            }
+        }
     }
     
     // Read source file
@@ -241,7 +272,8 @@ int main(int argc, char** argv) {
         .position = 0,
         .capacity = MAX_CODE_SIZE,
         .has_error = false,
-        .temporal_count = 0
+        .temporal_count = 0,
+        .target_platform = target_platform
     };
     
     // Initialize runtime with minimal setup
@@ -267,7 +299,7 @@ int main(int argc, char** argv) {
     print_str("[MAIN] About to emit platform exit\n");
     
     // Exit cleanly
-    emit_platform_exit(&code_buf, PLATFORM_LINUX, 0);
+    emit_platform_exit(&code_buf, target_platform, 0);
     
     print_str("[MAIN] Platform exit emitted\n");
     
@@ -277,8 +309,21 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    // Write executable
-    generate_elf_executable(code_buffer, code_buf.position, argv[2]);
+    // Write executable based on target platform
+    switch (target_platform) {
+        case PLATFORM_WINDOWS:
+            generate_pe_executable(code_buffer, code_buf.position, argv[2]);
+            break;
+        case PLATFORM_LINUX:
+            generate_elf_executable(code_buffer, code_buf.position, argv[2]);
+            break;
+        case PLATFORM_MACOS:
+            print_str("Error: macOS output not yet implemented\n");
+            return 1;
+        default:
+            print_str("Error: Unknown platform\n");
+            return 1;
+    }
     
     print_str("Successfully compiled ");
     print_num(code_buf.position);

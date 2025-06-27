@@ -320,6 +320,13 @@ typedef struct {
 
 // X64Register is defined in symbol_table_types.h
 
+// Platform types for cross-compilation
+typedef enum {
+    PLATFORM_LINUX,
+    PLATFORM_WINDOWS,
+    PLATFORM_MACOS
+} Platform;
+
 // Machine code buffer
 typedef struct {
     uint8_t* code;
@@ -335,6 +342,9 @@ typedef struct {
     uint32_t entry_point;
     uint32_t main_call_offset_pos;
     bool bss_offsets_need_patch;
+    
+    // Target platform for code generation
+    Platform target_platform;
 } CodeBuffer;
 
 // GGGX computation state
@@ -507,13 +517,6 @@ typedef struct Parser {
 } Parser;
 
 // Symbol table structures are defined in symbol_table_types.h
-
-// Platform types for cross-compilation
-typedef enum {
-    PLATFORM_LINUX,
-    PLATFORM_WINDOWS,
-    PLATFORM_MACOS
-} Platform;
 
 // Memory management structures (forward declarations only)
 typedef struct TemporalMemory TemporalMemory;
