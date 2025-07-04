@@ -141,31 +141,8 @@ static SymbolTable symbols = {0};
 // Main compiler entry point
 int main(int argc, char** argv) {
     
-    // Clear buffers to avoid garbage
-    for (int i = 0; i < 32768; i++) source_buffer[i] = 0;
-    for (int i = 0; i < MAX_TOKENS; i++) {
-        tokens[i].type = TOK_EOF;
-        tokens[i].start = 0;
-        tokens[i].len = 0;
-        tokens[i].line = 0;
-    }
-    
-    // Clear critical buffers
-    nodes[0].type = 0;
-    for (int j = 0; j < sizeof(nodes[0].data); j++) {
-        ((uint8_t*)&nodes[0].data)[j] = 0;
-    }
-    
-    for (int i = 0; i < 4096; i++) string_pool[i] = 0;
-    for (int i = 0; i < 1024; i++) code_buffer[i] = 0;
-    
-    for (int i = 0; i < 1024; i++) {
-        execution_plan[i].node_idx = 0;
-        execution_plan[i].creates_past_value = false;
-        execution_plan[i].requires_future_value = false;
-        execution_plan[i].temporal_order = 0;
-        execution_plan[i].dep_count = 0;
-    }
+    // Buffers are cleared by _start BSS clearing
+    // Manual clearing loops commented out for optimization debugging
     
     // Parse command line arguments
     if (argc < 3) {
@@ -174,38 +151,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    // Detect target platform
-    Platform target_platform = PLATFORM_LINUX;  // Default
-    
-    // Check for platform flags
-    for (int i = 3; i < argc; i++) {
-        if (argv[i][0] == '-' && argv[i][1] == '-') {
-            // Check for --windows shorthand
-            if (str_equals(argv[i], "--windows")) {
-                target_platform = PLATFORM_WINDOWS;
-                print_str("[MAIN] Target platform: Windows\n");
-                break;
-            }
-            // Check for --platform <name>
-            else if (str_equals(argv[i], "--platform") && i + 1 < argc) {
-                i++; // Move to platform name
-                if (str_equals(argv[i], "windows")) {
-                    target_platform = PLATFORM_WINDOWS;
-                    print_str("[MAIN] Target platform: Windows\n");
-                } else if (str_equals(argv[i], "macos")) {
-                    target_platform = PLATFORM_MACOS;
-                    print_str("[MAIN] Target platform: macOS\n");
-                } else if (str_equals(argv[i], "linux")) {
-                    target_platform = PLATFORM_LINUX;
-                    print_str("[MAIN] Target platform: Linux\n");
-                } else {
-                    print_str("Error: Unknown platform. Use linux, windows, or macos\n");
-                    return 1;
-                }
-                break;
-            }
-        }
-    }
+    // Hardcode target platform to Linux for debugging
+    Platform target_platform = PLATFORM_LINUX;
+    print_str("[MAIN] Target platform: Linux (hardcoded for debug)\n");
     
     // Read source file
     uint32_t source_len = read_file(argv[1], source_buffer, 32767);
