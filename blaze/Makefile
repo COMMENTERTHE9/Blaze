@@ -3,7 +3,7 @@
 
 CC = gcc
 # Default to -O0 for stability, -O1 now works with clobber fixes
-CFLAGS = -O0 -Wall -Wextra -fno-stack-protector -Iinclude
+CFLAGS = -O2 -Wall -Wextra -fno-stack-protector -Iinclude
 # For -O1 optimized builds (now working):
 # CFLAGS = -O1 -mcmodel=large -fno-section-anchors -fno-pic -Wall -Wextra -fno-stack-protector -Iinclude
 LDFLAGS = -nostdlib -static
