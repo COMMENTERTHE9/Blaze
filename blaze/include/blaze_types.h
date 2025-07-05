@@ -11,7 +11,7 @@ typedef long long int64_t;
 typedef int int32_t;
 typedef short int16_t;
 typedef signed char int8_t;
-typedef int bool;
+// typedef int bool; // Removed to use <stdbool.h> instead
 typedef unsigned long size_t;
 typedef long ssize_t;
 

@@ -32,6 +32,7 @@ static uint16_t parse_statement(Parser* p);
 static uint16_t parse_pipe_func_def(Parser* p);
 static uint16_t parse_action_block(Parser* p);
 static uint16_t parse_solid_number(Parser* p);
+static uint16_t parse_timeline_def(Parser* p);
 // Removed parse_declare_block - handled inline now
 
 // Parser utilities
@@ -75,13 +76,15 @@ static bool match(Parser* p, TokenType type) {
 // Allocate AST node from pool
 static uint16_t alloc_node(Parser* p, NodeType type) {
     if (p->node_count >= p->node_capacity) {
-        print_str("[ALLOC] ERROR: node_count=");
+        print_str("[ALLOC] FATAL ERROR: Node pool overflow! node_count=");
         print_num(p->node_count);
-        print_str(" >= capacity=");
+        print_str(" capacity=");
         print_num(p->node_capacity);
         print_str("\n");
-        p->has_error = true;
-        return 0;
+        // Immediately exit to prevent buffer overflow and crash
+        // In a real system, this might be a more graceful error handling
+        // but for security, we must prevent memory corruption.
+        syscall_exit(1);
     }
     
     uint16_t idx = p->node_count++;
@@ -106,9 +109,14 @@ static uint32_t store_string(Parser* p, Token* tok) {
     
     // Check if we have enough space for the string + null terminator
     if (p->string_pos + tok->len + 1 > 4096) {
-        p->has_error = true;
-        return 0;
+        print_str("[STORE_STRING] FATAL ERROR: String pool overflow! string_pos=");
+        print_num(p->string_pos);
+        print_str(" token_len=");
+        print_num(tok->len);
+        print_str("\n");
+        syscall_exit(1);
     }
+
     
     // Copy token text to string pool
     for (uint16_t i = 0; i < tok->len; i++) {
@@ -139,8 +147,8 @@ static uint32_t store_string_literal(Parser* p, Token* tok) {
     for (uint16_t i = start; i < end; i++) {
         // Check bounds before each write
         if (p->string_pos >= 4095) { // Leave room for null terminator
-            p->has_error = true;
-            return 0;
+            print_str("[STORE_STRING_LITERAL] FATAL ERROR: String pool overflow during copy!\n");
+            syscall_exit(1);
         }
         
         char c = p->source[tok->start + i];
@@ -1931,6 +1939,32 @@ static uint16_t parse_action_block(Parser* p) {
 // We don't need this function anymore since we handle declare/ inline
 
 // Parse conditional
+static uint16_t parse_timeline_def(Parser* p) {
+    Token* timeline_tok = advance(p); // Consume TOK_TIMELINE_DEF
+
+    uint16_t timeline_node = alloc_node(p, NODE_TIMELINE_DEF);
+    if (timeline_node == 0) return 0;
+
+    // Expect pipe-delimited identifier |name|
+    if (!match(p, TOK_PIPE)) {
+        p->has_error = true;
+        return 0;
+    }
+
+    Token* name_tok = advance(p);
+
+    if (!match(p, TOK_PIPE)) {
+        p->has_error = true;
+        return 0;
+    }
+
+    uint32_t name_offset = store_string(p, name_tok);
+    p->nodes[timeline_node].data.ident.name_offset = name_offset;
+    p->nodes[timeline_node].data.ident.name_len = name_tok->len;
+
+    return timeline_node;
+}
+
 static uint16_t parse_conditional(Parser* p) {
     // Advance the conditional token (f.if, f.ens, etc.)
     Token* cond_tok = advance(p);
@@ -2337,6 +2371,9 @@ static uint16_t parse_statement(Parser* p) {
         }
         advance(p);  // Consume the backslash
         
+        // Explicitly set next_output to 0 for the last statement
+        p->nodes[output_node].data.output.next_output = 0;
+        
         return output_node;
     }
     
@@ -2583,6 +2620,9 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
     }
     
     print_str("[PARSER] Returning program_node=");
+    print_num(program_node);
+    print_str("\n");
+    print_str("[DEBUG] parse_blaze: returning program_node=");
     print_num(program_node);
     print_str("\n");
     return program_node;

@@ -38,13 +38,13 @@ static uint32_t read_file(const char* filename, char* buffer, uint32_t max_size)
     print_str(" max_size=");
     print_num(max_size);
     print_str("\n");
-    
-    // Use syscalls to read file
-    int fd;
+
+    // Use syscalls to open file
+    int fd = -1;
     __asm__ volatile (
         "movq $2, %%rax\n"       // sys_open
         "movq %1, %%rdi\n"       // filename
-        "movq $0, %%rsi\n"       // O_RDONLY
+        "movq $0, %%rsi\n"       // flags (O_RDONLY)
         "movq $0, %%rdx\n"       // mode
         "syscall\n"
         "movl %%eax, %0\n"
@@ -52,33 +52,40 @@ static uint32_t read_file(const char* filename, char* buffer, uint32_t max_size)
         : "r"(filename)
         : "rax", "rdi", "rsi", "rdx", "rcx", "r11", "memory"
     );
-    
+    print_str("[DEBUG] After open syscall, fd=");
+    print_num(fd);
+    print_str("\n");
+
     if (fd < 0) {
         print_str("Error: Could not open file ");
         print_str(filename);
         print_str("\n");
         return 0;
     }
-    
+
     // Read file
-    int32_t bytes_read;
+    int64_t bytes_read = 0;
+    int64_t result = 0;
+    __asm__ volatile ("" ::: "memory");
     __asm__ volatile (
         "movq $0, %%rax\n"       // sys_read
         "movl %1, %%edi\n"       // fd
         "movq %2, %%rsi\n"       // buffer
         "movq %3, %%rdx\n"       // count
         "syscall\n"
-        "movl %%eax, %0\n"
-        : "=r"(bytes_read)
+        "movq %%rax, %0\n"
+        : "=r"(result)
         : "r"(fd), "r"(buffer), "r"((uint64_t)max_size)
         : "rax", "rdi", "rsi", "rdx", "rcx", "r11", "memory"
     );
-    
-    print_str("[READ_FILE] Read syscall returned bytes_read=");
+    __asm__ volatile ("" ::: "memory");
+    bytes_read = result;
+    print_str("[DEBUG] After read syscall, bytes_read=");
     print_num(bytes_read);
     print_str("\n");
-    
+
     // Close file
+    __asm__ volatile ("" ::: "memory");
     __asm__ volatile (
         "movq $3, %%rax\n"       // sys_close
         "movl %0, %%edi\n"       // fd
@@ -87,11 +94,12 @@ static uint32_t read_file(const char* filename, char* buffer, uint32_t max_size)
         : "r"(fd)
         : "rax", "rdi", "rcx", "r11", "memory"
     );
-    
+    __asm__ volatile ("" ::: "memory");
+
     print_str("[READ_FILE] Returning ");
     print_num((bytes_read < 0) ? 0 : bytes_read);
     print_str(" bytes\n");
-    
+
     return (bytes_read < 0) ? 0 : bytes_read;
 }
 
@@ -140,9 +148,41 @@ static SymbolTable symbols = {0};
 
 // Main compiler entry point
 int main(int argc, char** argv) {
+    print_str("[DEBUG] TEST print_str: 12345\n");
+    print_num(12345);
+    print_str("\n");
+    print_str("[DEBUG] Entered main\n");
+    print_str("[DEBUG] Before clearing source_buffer\n");
+    for (int i = 0; i < 1024; i++) source_buffer[i] = 0;
+    print_str("[DEBUG] After clearing source_buffer\n");
+    print_str("[DEBUG] Before clearing tokens\n");
+    for (int i = 0; i < MAX_TOKENS; i++) {
+        tokens[i].type = TOK_EOF;
+        tokens[i].start = 0;
+        tokens[i].len = 0;
+        tokens[i].line = 0;
+    }
+    print_str("[DEBUG] After clearing tokens\n");
+    print_str("[DEBUG] Before clearing string_pool\n");
+    for (int i = 0; i < 4096; i++) string_pool[i] = 0;
+    print_str("[DEBUG] After clearing string_pool\n");
+    print_str("[DEBUG] Before clearing code_buffer\n");
+    for (int i = 0; i < 1024; i++) code_buffer[i] = 0;
+    print_str("[DEBUG] After clearing code_buffer\n");
     
-    // Buffers are cleared by _start BSS clearing
-    // Manual clearing loops commented out for optimization debugging
+    // Clear critical buffers
+    nodes[0].type = 0;
+    for (int j = 0; j < sizeof(nodes[0].data); j++) {
+        ((uint8_t*)&nodes[0].data)[j] = 0;
+    }
+    
+    for (int i = 0; i < 1024; i++) {
+        execution_plan[i].node_idx = 0;
+        execution_plan[i].creates_past_value = false;
+        execution_plan[i].requires_future_value = false;
+        execution_plan[i].temporal_order = 0;
+        execution_plan[i].dep_count = 0;
+    }
     
     // Parse command line arguments
     if (argc < 3) {
@@ -151,12 +191,50 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    // Hardcode target platform to Linux for debugging
-    Platform target_platform = PLATFORM_LINUX;
-    print_str("[MAIN] Target platform: Linux (hardcoded for debug)\n");
+    // Detect target platform
+    Platform target_platform = PLATFORM_LINUX;  // Default
+    
+    // Check for platform flags
+    for (int i = 3; i < argc; i++) {
+        if (argv[i][0] == '-' && argv[i][1] == '-') {
+            // Check for --windows shorthand
+            if (str_equals(argv[i], "--windows")) {
+                target_platform = PLATFORM_WINDOWS;
+                print_str("[MAIN] Target platform: Windows\n");
+                break;
+            }
+            // Check for --platform <name>
+            else if (str_equals(argv[i], "--platform") && i + 1 < argc) {
+                i++; // Move to platform name
+                if (str_equals(argv[i], "windows")) {
+                    target_platform = PLATFORM_WINDOWS;
+                    print_str("[MAIN] Target platform: Windows\n");
+                } else if (str_equals(argv[i], "macos")) {
+                    target_platform = PLATFORM_MACOS;
+                    print_str("[MAIN] Target platform: macOS\n");
+                } else if (str_equals(argv[i], "linux")) {
+                    target_platform = PLATFORM_LINUX;
+                    print_str("[MAIN] Target platform: Linux\n");
+                } else {
+                    print_str("Error: Unknown platform. Use linux, windows, or macos\n");
+                    return 1;
+                }
+                break;
+            }
+        }
+    }
     
     // Read source file
     uint32_t source_len = read_file(argv[1], source_buffer, 32767);
+    print_str("[DEBUG] Finished read_file\n");
+    print_str("[DEBUG] source_len=");
+    print_num(source_len);
+    print_str("\n[DEBUG] First 32 bytes of source_buffer: ");
+    for (int i = 0; i < 32 && i < source_len; i++) {
+        char c[2] = {source_buffer[i], 0};
+        print_str(c);
+    }
+    print_str("\n");
     print_str("[MAIN] After read_file, source_len=");
     print_num(source_len);
     print_str(" at addr=");
@@ -164,28 +242,18 @@ int main(int argc, char** argv) {
     print_str("\n");
     
     if (source_len == 0) {
+        print_str("[DEBUG] Source length is 0, exiting\n");
         return 1;
     }
     
-    print_str("[MAIN] Before lex_blaze, source_len=");
-    print_num(source_len);
-    print_str("\n");
-    
+    print_str("[DEBUG] Before lex_blaze\n");
     // Tokenize
     print_str("[MAIN] Calling lex_blaze with source_len=");
     print_num(source_len);
     print_str("\n");
     
-    // Debug: Set RSI explicitly before the call
-    print_str("[MAIN] Setting up call: buffer=");
-    print_num((uint64_t)source_buffer);
-    print_str(" len=");
-    print_num(source_len);
-    print_str(" tokens=");
-    print_num((uint64_t)tokens);
-    print_str("\n");
-    
     uint32_t token_count = lex_blaze(source_buffer, source_len, tokens);
+    print_str("[DEBUG] Finished lex_blaze\n");
     print_str("[MAIN] lex_blaze returned token_count=");
     print_num(token_count);
     print_str("\n");
@@ -194,6 +262,16 @@ int main(int argc, char** argv) {
         return 1;
     }
     
+    print_str("[DEBUG] First 5 tokens after lex_blaze:\n");
+    for (int i = 0; i < 5; i++) {
+        print_str("  token["); print_num(i); print_str("]: type=");
+        print_num(tokens[i].type); print_str(" start=");
+        print_num(tokens[i].start); print_str(" len=");
+        print_num(tokens[i].len); print_str(" line=");
+        print_num(tokens[i].line); print_str("\n");
+    }
+    
+    print_str("[DEBUG] Before parse_blaze\n");
     // Parse
     print_str("[MAIN] Calling parse_blaze with token_count=");
     print_num(token_count);
@@ -201,19 +279,33 @@ int main(int argc, char** argv) {
     print_num((uint64_t)nodes);
     print_str("\n");
     uint16_t root_idx = parse_blaze(tokens, token_count, nodes, 4096, string_pool, source_buffer);
+    print_str("[DEBUG] Finished parse_blaze\n");
+    print_str("[DEBUG] root_idx=");
+    print_num(root_idx);
+    print_str(" nodes[0].type=");
+    print_num(nodes[0].type);
+    print_str("\n");
     if (root_idx == 0) {
         print_str("Error: Parse failed\n");
         return 1;
     }
     
+    print_str("[DEBUG] Before symbol_table_init\n");
     // Symbol table
     static SymbolTable symbols;
     symbol_table_init(&symbols, string_pool);
+    print_str("[DEBUG] After symbol_table_init\n");
+    
+    print_str("[DEBUG] Before build_symbol_table\n");
+    build_symbol_table(&symbols, nodes, root_idx, 4096, string_pool);
+    print_str("[DEBUG] After build_symbol_table\n");
+    print_str("[DEBUG] Before codegen\n");
     
     if (!build_symbol_table(&symbols, nodes, root_idx, 4096, string_pool)) {
         print_str("Error: Symbol table build failed\n");
         return 1;
     }
+    print_str("[DEBUG] After build_symbol_table\n");
     
     // Time travel analysis
     uint32_t plan_size = 0;
@@ -226,6 +318,7 @@ int main(int argc, char** argv) {
             plan_size++;
         }
     }
+    print_str("[DEBUG] After resolve_time_travel\n");
     
     // Code generation
     CodeBuffer code_buf = {
@@ -236,16 +329,19 @@ int main(int argc, char** argv) {
         .temporal_count = 0,
         .target_platform = target_platform
     };
-    
+    print_str("[DEBUG] Before generate_runtime_init_minimal\n");
     // Initialize runtime with minimal setup
     generate_runtime_init_minimal(&code_buf);
+    print_str("[DEBUG] After generate_runtime_init_minimal\n");
     
     // Initialize variable storage
     extern void generate_var_storage_init(CodeBuffer* buf);
     generate_var_storage_init(&code_buf);
+    print_str("[DEBUG] After generate_var_storage_init\n");
     
     // Generate code
     generate_statement(&code_buf, nodes, root_idx, &symbols, string_pool);
+    print_str("[DEBUG] After generate_statement\n");
     
     // Check for buffer overflow errors
     if (code_buf.has_error) {

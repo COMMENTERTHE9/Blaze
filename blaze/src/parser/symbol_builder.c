@@ -310,6 +310,13 @@ static void process_conditional(SymbolBuilder* builder, uint16_t node_idx) {
 
 // Main recursive symbol builder
 static void build_symbols_from_node(SymbolBuilder* builder, uint16_t node_idx) {
+    print_str("[DEBUG] build_symbols_from_node: node_idx=");
+    print_num(node_idx);
+    if (node_idx < builder->node_count) {
+        print_str(" type=");
+        print_num(builder->nodes[node_idx].type);
+    }
+    print_str("\n");
     if (node_idx == 0 || node_idx >= builder->node_count) {
         print_str("build_symbols_from_node: skipping invalid node_idx=");
         print_num(node_idx);

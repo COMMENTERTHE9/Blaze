@@ -4,11 +4,7 @@
 #include "blaze_internals.h"
 #include <math.h>
 
-// SSE register type - defined in codegen_x64_sse.c
-typedef enum {
-    XMM0 = 0, XMM1 = 1, XMM2 = 2, XMM3 = 3,
-    XMM4 = 4, XMM5 = 5, XMM6 = 6, XMM7 = 7
-} SSERegister;
+
 
 // Forward declarations
 extern void emit_mov_reg_imm64(CodeBuffer* buf, X64Register reg, uint64_t value);

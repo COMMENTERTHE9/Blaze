@@ -189,7 +189,7 @@ int syscall_open(const char* filename, int flags, int mode) {
     return result;
 }
 
-int syscall_write(int fd, const void* buf, size_t count) {
+int syscall_write(int fd, volatile const void* buf, size_t count) {
     int result;
     __asm__ volatile (
         "movq $1, %%rax\n"     // write syscall

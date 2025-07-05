@@ -3,6 +3,7 @@
 #ifndef BLAZE_INTERNALS_H
 #define BLAZE_INTERNALS_H
 
+#include <stdbool.h>
 #include "blaze_types.h"
 #include "symbol_table_types.h"
 #include "blaze_stdlib.h"
@@ -51,7 +52,7 @@ extern MemoryState g_memory;
 
 // Configuration
 #define MAX_TOKENS 4096
-#define MAX_CODE_SIZE 1048576  // 1MB instead of 64KB
+#define MAX_CODE_SIZE 65536   // 64KB - more reasonable for stack allocation
 #define MAX_STACK_SIZE 1024
 
 // System calls for Linux x64
@@ -320,6 +321,14 @@ typedef struct {
 
 // X64Register is defined in symbol_table_types.h
 
+// SSE register encoding (XMM0-XMM15)
+typedef enum {
+    XMM0 = 0, XMM1 = 1, XMM2 = 2, XMM3 = 3,
+    XMM4 = 4, XMM5 = 5, XMM6 = 6, XMM7 = 7,
+    XMM8 = 8, XMM9 = 9, XMM10 = 10, XMM11 = 11,
+    XMM12 = 12, XMM13 = 13, XMM14 = 14, XMM15 = 15
+} SSERegister;
+
 // Platform types for cross-compilation
 typedef enum {
     PLATFORM_LINUX,
@@ -385,6 +394,8 @@ typedef enum {
     NODE_ARRAY_4D_ACCESS,
     NODE_GAP_ANALYSIS,
     NODE_GAP_COMPUTE,
+    NODE_TIMELINE_DEF,
+    NODE_TIMELINE_JUMP,
     NODE_FIXED_POINT,
     NODE_PERMANENT_TIMELINE,
     NODE_FLOW_SPEC,
@@ -606,28 +617,29 @@ static inline void print_str(const char* str) {
     const char* p = str;
     int len = 0;
     while (p[len]) len++;
+    __asm__ volatile("push %%rcx; push %%r11;" ::: "memory");
     syscall6(SYS_WRITE, 1, (long)str, len, 0, 0, 0);
+    __asm__ volatile("pop %%r11; pop %%rcx;" ::: "memory");
 }
 
 static inline void print_num(long num) {
     char buf[32];
     int i = 30;
     buf[31] = '\0';
-    
+    bool neg = false;
     if (num == 0) {
         buf[i--] = '0';
     } else {
-        bool neg = num < 0;
-        if (neg) num = -num;
-        
+        if (num < 0) {
+            neg = true;
+            num = -num;
+        }
         while (num > 0 && i >= 0) {
             buf[i--] = '0' + (num % 10);
             num /= 10;
         }
-        
         if (neg && i >= 0) buf[i--] = '-';
     }
-    
     print_str(&buf[i + 1]);
 }
 
@@ -638,6 +650,50 @@ void emit_mov_mem_reg(CodeBuffer* buf, X64Register base, int32_t offset, X64Regi
 void emit_mov_reg_mem(CodeBuffer* buf, X64Register dst, X64Register base, int32_t offset);
 void emit_add_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
 void emit_sub_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
+
+// Inline syscall_exit for use across modules
+static inline void syscall_exit(int status) {
+    __asm__ volatile(
+        "push %%rax\n"
+        "push %%rbx\n"
+        "push %%rcx\n"
+        "push %%rdx\n"
+        "push %%rsi\n"
+        "push %%rdi\n"
+        "push %%rbp\n"
+        "push %%r8\n"
+        "push %%r9\n"
+        "push %%r10\n"
+        "push %%r11\n"
+        "push %%r12\n"
+        "push %%r13\n"
+        "push %%r14\n"
+        "push %%r15\n"
+        "movl %0, %%edi\n"
+        "movl $60, %%eax\n"
+        "syscall\n"
+        "pop %%r15\n"
+        "pop %%r14\n"
+        "pop %%r13\n"
+        "pop %%r12\n"
+        "pop %%r11\n"
+        "pop %%r10\n"
+        "pop %%r9\n"
+        "pop %%r8\n"
+        "pop %%rbp\n"
+        "pop %%rdi\n"
+        "pop %%rsi\n"
+        "pop %%rdx\n"
+        "pop %%rcx\n"
+        "pop %%rbx\n"
+        "pop %%rax\n"
+        :
+        : "r"(status)
+        : "memory"
+    );
+    // Should not return
+    __builtin_unreachable();
+}
 void emit_add_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
 void emit_sub_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
 void emit_mul_reg(CodeBuffer* buf, X64Register reg);
@@ -683,7 +739,7 @@ Symbol* symbol_add_array_4d(SymbolTable* table, const char* name,
 // File I/O helpers
 int syscall_open(const char* filename, int flags, int mode);
 int syscall_close(int fd);
-int syscall_write(int fd, const void* buf, size_t count);
+int syscall_write(int fd, volatile const void* buf, size_t count);
 uint32_t str_len(const char* s);
 
 // Platform utilities
