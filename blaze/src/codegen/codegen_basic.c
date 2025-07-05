@@ -1428,6 +1428,18 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
             // So we skip them here to avoid duplicate generation
             break;
             
+        case NODE_RETURN: {
+            // Evaluate the return expression (if any)
+            uint16_t expr_idx = node->data.unary.expr_idx;
+            if (expr_idx != 0 && expr_idx < 4096) {
+                generate_expression(buf, nodes, expr_idx, symbols, string_pool);
+                // Result should be in RAX
+            }
+            // Emit function epilogue (mov rsp, rbp; pop rbp; ret)
+            emit_function_epilogue(buf);
+            break;
+        }
+            
         default:
             // Skip other node types for now
             break;

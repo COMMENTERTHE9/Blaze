@@ -184,7 +184,7 @@ typedef enum {
     TOK_RBRACE,          // }
     TOK_COLON,           // :
     TOK_BANG,            // !
-    
+    TOK_COMMENT,         // ## comment ##
     // Parameter token
     TOK_PARAM,           // {@param:
     
@@ -405,7 +405,8 @@ typedef enum {
     NODE_FUNC_CALL,
     NODE_UNARY_OP,
     NODE_SOLID,
-    NODE_BOOL
+    NODE_BOOL,
+    NODE_RETURN
 } NodeType;
 
 // AST Node - compact representation
