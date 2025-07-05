@@ -446,7 +446,9 @@ static uint32_t parse_temporal_op(const char* input, uint32_t pos, uint32_t len,
 
 // Parse output methods: print/, txt/, out/, fmt/, dyn/
 static uint32_t parse_output_method(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    print_str("[LEXER] parse_output_method called at pos "); print_num(pos); print_str("\n");
     if (match_string(input, pos, len, "print/")) {
+        print_str("[LEXER] Found print/ at pos "); print_num(pos); print_str("\n");
         tok->type = TOK_PRINT;
         tok->len = 6;
         return pos + 6;
@@ -821,6 +823,14 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
             continue;
         }
         
+        // Try output methods: print/, txt/, out/, fmt/, dyn/, asm/
+        if ((next_pos = parse_output_method(input, pos, len, tok)) != 0) {
+            print_str("[LEXER] Found output method at pos "); print_num(pos); print_str(" type="); print_num(tok->type); print_str("\n");
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
         // Try identifier
         if ((next_pos = parse_identifier(input, pos, len, tok)) != 0) {
             pos = next_pos;
@@ -984,6 +994,12 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     pos++;
                     token_count++;
                     continue;
+                case '#':
+                    tok->type = TOK_COMMENT;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
                 default:
                     if (c == '<') {
                         print_str("[LEXER] DEFAULT CASE: treating '<' as single-char token at pos ");
@@ -1020,9 +1036,9 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
     }
     
     uint32_t result = token_count;
-    // Debug: print first 10 tokens and their text
-    print_str("[LEXER DEBUG] First 10 tokens:\n");
-    for (uint32_t i = 0; i < result && i < 10; i++) {
+    // Debug: print all tokens and their text
+    print_str("[LEXER DEBUG] All tokens:\n");
+    for (uint32_t i = 0; i < result; i++) {
         Token* t = &output[i];
         print_str("  token["); print_num(i); print_str("]: type="); print_num(t->type);
         print_str(" start="); print_num(t->start);

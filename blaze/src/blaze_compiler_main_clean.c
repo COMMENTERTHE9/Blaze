@@ -38,7 +38,7 @@ static uint32_t read_file(const char* filename, char* buffer, uint32_t max_size)
     print_str(" max_size=");
     print_num(max_size);
     print_str("\n");
-
+    
     // Use syscalls to open file
     int fd = -1;
     __asm__ volatile (
@@ -55,14 +55,14 @@ static uint32_t read_file(const char* filename, char* buffer, uint32_t max_size)
     print_str("[DEBUG] After open syscall, fd=");
     print_num(fd);
     print_str("\n");
-
+    
     if (fd < 0) {
         print_str("Error: Could not open file ");
         print_str(filename);
         print_str("\n");
         return 0;
     }
-
+    
     // Read file
     int64_t bytes_read = 0;
     int64_t result = 0;
@@ -83,7 +83,7 @@ static uint32_t read_file(const char* filename, char* buffer, uint32_t max_size)
     print_str("[DEBUG] After read syscall, bytes_read=");
     print_num(bytes_read);
     print_str("\n");
-
+    
     // Close file
     __asm__ volatile ("" ::: "memory");
     __asm__ volatile (
@@ -95,11 +95,11 @@ static uint32_t read_file(const char* filename, char* buffer, uint32_t max_size)
         : "rax", "rdi", "rcx", "r11", "memory"
     );
     __asm__ volatile ("" ::: "memory");
-
+    
     print_str("[READ_FILE] Returning ");
     print_num((bytes_read < 0) ? 0 : bytes_read);
     print_str(" bytes\n");
-
+    
     return (bytes_read < 0) ? 0 : bytes_read;
 }
 

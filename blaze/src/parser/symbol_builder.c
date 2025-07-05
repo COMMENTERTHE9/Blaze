@@ -146,21 +146,39 @@ static void process_var_def(SymbolBuilder* builder, uint16_t node_idx) {
 static void process_func_def(SymbolBuilder* builder, uint16_t node_idx) {
     ASTNode* node = &builder->nodes[node_idx];
     
-    // Function name stored in upper 16 bits of temporal_offset
-    uint16_t name_idx = (node->data.timing.temporal_offset >> 16) & 0xFFFF;
-    ASTNode* name_node = &builder->nodes[name_idx];
-    const char* name = &builder->string_pool[name_node->data.ident.name_offset];
+    // Get function name from expr_idx
+    uint16_t name_idx = node->data.timing.expr_idx;
+    if (name_idx == 0 || name_idx >= builder->node_count) {
+        builder->has_error = true;
+        builder->error_node = node_idx;
+        return;
+    }
     
-    // Calculate name length
-    uint16_t name_len = 0;
-    while (name[name_len] && name[name_len] != ' ' && 
-           name[name_len] != '|' && name[name_len] != '.') {
-        name_len++;
+    ASTNode* name_node = &builder->nodes[name_idx];
+    if (name_node->type != NODE_IDENTIFIER) {
+        builder->has_error = true;
+        builder->error_node = node_idx;
+        return;
+    }
+    
+    const char* name = &builder->string_pool[name_node->data.ident.name_offset];
+    uint16_t name_len = name_node->data.ident.name_len;
+    
+    // Count parameters
+    uint16_t param_count = node->data.binary.op;
+    uint16_t current_param = 0;
+    uint16_t param_idx = node->data.binary.left_idx; // First parameter
+    
+    // Count actual parameters
+    while (param_idx != 0 && current_param < 6 && param_idx < builder->node_count) {
+        current_param++;
+        ASTNode* param_node = &builder->nodes[param_idx];
+        param_idx = param_node->data.binary.right_idx; // Next parameter
     }
     
     // Add function to symbol table
     Symbol* sym = symbol_add_function(builder->table, name, name_len, 
-                                     node_idx, 0); // Param count TODO
+                                     node_idx, current_param);
     
     if (!sym) {
         builder->has_error = true;
@@ -176,7 +194,43 @@ static void process_func_def(SymbolBuilder* builder, uint16_t node_idx) {
     // Create new scope for function body
     symbol_push_scope(builder->table, false, 0);
     
-    // TODO: Process function parameters and body
+    // Process function parameters
+    param_idx = node->data.binary.left_idx; // Reset to first parameter
+    current_param = 0;
+    
+    while (param_idx != 0 && current_param < 6 && param_idx < builder->node_count) {
+        ASTNode* param_node = &builder->nodes[param_idx];
+        if (param_node->type == NODE_IDENTIFIER) {
+            // Parameter has name stored in binary structure
+            uint32_t name_offset = param_node->data.binary.left_idx;
+            const char* param_name = &builder->string_pool[name_offset];
+            uint16_t param_name_len = param_node->data.ident.name_len;
+            
+            // Add parameter to symbol table
+            Symbol* param_sym = symbol_add_variable(builder->table, param_name, param_name_len, 
+                                                   false, true); // Not temporal, mutable
+            if (param_sym) {
+                // Mark as function parameter
+                param_sym->type = SYMBOL_VARIABLE;
+                param_sym->storage = STORAGE_REGISTER;
+                param_sym->data.var.is_mutable = true;
+                
+                print_str("  Added function parameter: ");
+                print_str(param_name);
+                print_str("\n");
+            }
+        }
+        
+        // Move to next parameter
+        param_idx = param_node->data.binary.right_idx;
+        current_param++;
+    }
+    
+    // Process function body
+    uint16_t body_idx = node->data.timing.temporal_offset;
+    if (body_idx != 0 && body_idx < builder->node_count) {
+        build_symbols_from_node(builder, body_idx);
+    }
     
     // Pop function scope
     symbol_pop_scope(builder->table);
