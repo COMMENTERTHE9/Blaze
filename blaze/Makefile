@@ -19,7 +19,7 @@ TARGET = blaze
 
 # Source files
 SRCS = src/blaze_compiler_main_clean.c \
-       src/lexer/lexer_core.c \
+       src/lexer/lexer_blaze_v2.c \
        src/parser/parser_core.c \
        src/parser/symbol_table.c \
        src/parser/symbol_builder.c \

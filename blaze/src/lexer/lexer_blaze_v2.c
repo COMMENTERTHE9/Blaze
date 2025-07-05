@@ -172,26 +172,74 @@ static uint32_t parse_function_def(const char* input, uint32_t pos, uint32_t len
     return 0;
 }
 
-
-// Parse parameter: /{@param:name}
-static uint32_t parse_parameter(const char* input, uint32_t pos, uint32_t len, Token* tok) {
-    if (pos + 9 < len && match_string(input, pos, len, "/{@param:")) {
-        uint32_t start = pos;
-        pos += 9; // Skip "/{@param:"
-        
+// Parse parameter after < has been consumed: {@param:name}
+static uint32_t parse_parameter_after_lt(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    uint32_t start = pos;
+    print_str("[LEXER] parse_parameter_after_lt called at pos "); print_num(pos); print_str("\n");
+    print_str("[LEXER] parse_parameter_after_lt: next 10 chars: '");
+    for (int i = 0; i < 10 && pos + i < len; i++) {
+        char c = input[pos + i];
+        if (c >= 32 && c <= 126) {
+            char buf[2] = {c, '\0'};
+            print_str(buf);
+        } else if (c == '\n') {
+            print_str("\\n");
+        } else {
+            print_str("?");
+        }
+    }
+    print_str("'\n");
+    // Skip optional whitespace
+    while (pos < len && (input[pos] == ' ' || input[pos] == '\t')) pos++;
+    if (pos + 7 < len && input[pos] == '{' && match_string(input, pos + 1, len - (pos + 1), "@param:")) {
+        print_str("[LEXER] parse_parameter_after_lt: found {@param: at pos "); print_num(pos); print_str("\n");
+        pos += 1 + 7; // Skip '{@param:'
         // Find the closing }
         while (pos < len && input[pos] != '}') {
             if (!is_alnum(input[pos]) && input[pos] != '_') {
+                print_str("[LEXER] parse_parameter_after_lt: invalid char in param name\n");
                 return 0; // Invalid character in parameter name
             }
             pos++;
         }
-        
         if (pos < len && input[pos] == '}') {
             pos++; // Include the closing }
             tok->type = TOK_PARAM;
+            tok->start = start;
             tok->len = pos - start;
+            print_str("[LEXER] parse_parameter_after_lt: success, len="); print_num(tok->len); print_str("\n");
             return pos;
+        }
+    }
+    print_str("[LEXER] parse_parameter_after_lt: no match\n");
+    return 0;
+}
+
+// Parse parameter: < {@param:name} or /{@param:name}
+static uint32_t parse_parameter(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    // Accept either < {@param:name} or /{@param:name}
+    uint32_t start = pos;
+    // Skip optional whitespace
+    while (pos < len && (input[pos] == ' ' || input[pos] == '\t')) pos++;
+    if (pos < len && (input[pos] == '<' || input[pos] == '/')) {
+        pos++;
+        // Skip optional whitespace
+        while (pos < len && (input[pos] == ' ' || input[pos] == '\t')) pos++;
+        if (pos + 7 < len && input[pos] == '{' && match_string(input, pos + 1, len - (pos + 1), "@param:")) {
+            pos += 1 + 7; // Skip '{@param:'
+            // Find the closing }
+            while (pos < len && input[pos] != '}') {
+                if (!is_alnum(input[pos]) && input[pos] != '_') {
+                    return 0; // Invalid character in parameter name
+                }
+                pos++;
+            }
+            if (pos < len && input[pos] == '}') {
+                pos++; // Include the closing }
+                tok->type = TOK_PARAM;
+                tok->len = pos - start;
+                return pos;
+            }
         }
     }
     return 0;
@@ -264,11 +312,28 @@ static uint32_t parse_permanent_timeline(const char* input, uint32_t pos, uint32
 
 // Parse action block: do/
 static uint32_t parse_action(const char* input, uint32_t pos, uint32_t len, Token* tok) {
-    if (match_string(input, pos, len, "do/")) {
+    print_str("[LEXER] parse_action called at pos "); print_num(pos); print_str("\n");
+    
+    if (pos + 2 >= len) {
+        print_str("[LEXER] parse_action: not enough chars\n");
+        return 0;
+    }
+    
+    print_str("[LEXER] parse_action: checking '"); 
+    for (int i = 0; i < 3 && pos + i < len; i++) {
+        char buf[2] = {input[pos + i], '\0'};
+        print_str(buf);
+    }
+    print_str("'\n");
+    
+    if (input[pos] == 'd' && input[pos + 1] == 'o' && input[pos + 2] == '/') {
+        print_str("[LEXER] parse_action: found 'do/' at pos "); print_num(pos); print_str("\n");
         tok->type = TOK_ACTION_START;
         tok->len = 3;
         return pos + 3;
     }
+    
+    print_str("[LEXER] parse_action: no match\n");
     return 0;
 }
 
@@ -635,11 +700,27 @@ static uint32_t parse_function_call(const char* input, uint32_t pos, uint32_t le
 
 // Main lexer function
 uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
+    print_str("[LEXER] ENTERED lex_blaze\n");
     uint32_t pos = 0;
     uint32_t token_count = 0;
     uint32_t line = 1;
+    uint32_t next_pos = 0;  // Add missing variable declaration
     
     while (pos < len && token_count < MAX_TOKENS - 1) {
+        print_str("[LEXER] MAIN LOOP at pos "); print_num(pos); print_str(", char='");
+        if (pos < len) {
+            char c = input[pos];
+            if (c >= 32 && c <= 126) {
+                char buf[2] = {c, '\0'};
+                print_str(buf);
+            } else if (c == '\n') {
+                print_str("\\n");
+            } else {
+                print_str("?");
+            }
+        }
+        print_str("'\n");
+        
         // Skip whitespace
         pos = skip_whitespace(input, pos, len, &line);
         if (pos >= len) break;
@@ -655,60 +736,65 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
         tok->start = pos;
         tok->line = line;
         
-        // Try to parse various token types
-        uint32_t next_pos = 0;
-        
-        // Try variable declaration first
-        if ((next_pos = parse_var_decl(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
+        // Check for parameter/action block first
+        if (pos < len && input[pos] == '<') {
+            print_str("[LEXER] FOUND < at pos "); print_num(pos); print_str(", next 20 chars: '");
+            for (int i = 0; i < 20 && pos + i < len; i++) {
+                char c = input[pos + i];
+                if (c >= 32 && c <= 126) {
+                    char buf[2] = {c, '\0'};
+                    print_str(buf);
+                } else if (c == '\n') {
+                    print_str("\\n");
+                } else {
+                    print_str("?");
+                }
+            }
+            print_str("'\n");
+            print_str("[LEXER] ENTERED < PARAM/ACTION BLOCK at pos "); print_num(pos); print_str("\n");
+            pos++; // consume '<'
+            pos = skip_whitespace(input, pos, len, &line);
+            uint32_t new_pos = skip_comment(input, pos, len);
+            if (new_pos != pos) pos = new_pos;
+            // Parse zero or more parameters
+            while ((next_pos = parse_parameter_after_lt(input, pos, len, &output[token_count])) != 0) {
+                print_str("[LEXER] Found parameter token at pos "); print_num(pos); print_str("\n");
+                output[token_count].start = pos;
+                pos = next_pos;
+                token_count++;
+                pos = skip_whitespace(input, pos, len, &line);
+                new_pos = skip_comment(input, pos, len);
+                if (new_pos != pos) pos = new_pos;
+            }
+            // Always skip whitespace/comments before action block, even if no params
+            pos = skip_whitespace(input, pos, len, &line);
+            new_pos = skip_comment(input, pos, len);
+            if (new_pos != pos) pos = new_pos;
+            print_str("[LEXER] Before parse_action, next 10 chars: '");
+            for (int i = 0; i < 10 && pos + i < len; i++) {
+                char c = input[pos + i];
+                if (c >= 32 && c <= 126) {
+                    char buf[2] = {c, '\0'};
+                    print_str(buf);
+                } else if (c == '\n') {
+                    print_str("\\n");
+                } else {
+                    print_str("?");
+                }
+            }
+            print_str("'\n");
+            if ((next_pos = parse_action(input, pos, len, &output[token_count])) != 0) {
+                print_str("[LEXER] Found TOK_ACTION_START after < at pos "); print_num(pos); print_str("\n");
+                output[token_count].start = pos;
+                pos = next_pos;
+                token_count++;
+                continue;
+            }
+            // If not action, treat < as temporal op (fall through)
+            // (do not emit < token here)
         }
-        
-        // Try array.4d
-        if ((next_pos = parse_array(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try gap.compute
-        if ((next_pos = parse_gap(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try timeline
-        if ((next_pos = parse_timeline(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try fixed points
-        if ((next_pos = parse_fixed_point(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try permanent timelines
-        if ((next_pos = parse_permanent_timeline(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try parameter BEFORE action to catch /{@param: before / is lexed
-        if ((next_pos = parse_parameter(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try action block
-        if ((next_pos = parse_action(input, pos, len, tok)) != 0) {
+        // Now check for temporal op if parameter/action block did not match
+        if ((next_pos = parse_temporal_op(input, pos, len, tok)) != 0) {
             pos = next_pos;
             token_count++;
             continue;
@@ -721,91 +807,15 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
             continue;
         }
         
-        // Try time-bridge operators
-        if ((next_pos = parse_time_bridge(input, pos, len, tok)) != 0) {
+        // Try function definition: |name|
+        if ((next_pos = parse_function_def(input, pos, len, tok)) != 0) {
             pos = next_pos;
             token_count++;
             continue;
         }
         
-        // Try @param:name reference
-        if (pos + 7 < len && input[pos] == '@' && match_string(input, pos + 1, len - 1, "param:")) {
-            uint32_t start = pos;
-            pos += 7; // Skip "@param:"
-            
-            // Parse parameter name
-            while (pos < len && (is_alnum(input[pos]) || input[pos] == '_')) {
-                pos++;
-            }
-            
-            if (pos > start + 7) { // We found a parameter name
-                tok->type = TOK_PARAM;
-                tok->len = pos - start;
-                pos = start + tok->len;
-                token_count++;
-                continue;
-            }
-            pos = start; // Reset if no valid name
-        }
-        
-        // Try output methods (print/, txt/, out/, fmt/, dyn/)
-        if ((next_pos = parse_output_method(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try split operations (c.split._, cac._, Crack._)
-        if ((next_pos = parse_split(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try matrix
-        if ((next_pos = parse_matrix(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try connector
-        if ((next_pos = parse_connector(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try temporal operators
-        if ((next_pos = parse_temporal_op(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try comparison operators
-        if ((next_pos = parse_comparison(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try conditionals
-        if ((next_pos = parse_conditional(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try function call (verb.can/)
-        if ((next_pos = parse_function_call(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
-        
-        // Try number
-        if ((next_pos = parse_number(input, pos, len, tok)) != 0) {
+        // Try variable declaration
+        if ((next_pos = parse_var_decl(input, pos, len, tok)) != 0) {
             pos = next_pos;
             token_count++;
             continue;
@@ -818,58 +828,183 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
             continue;
         }
         
-        // Try string literal
-        if (input[pos] == '"') {
-            uint32_t start = pos;
-            pos++; // Skip opening quote
-            
-            // Find closing quote
-            while (pos < len && input[pos] != '"') {
-                if (input[pos] == '\\' && pos + 1 < len) {
-                    pos += 2; // Skip escaped character
-                } else {
+        // Try number
+        if ((next_pos = parse_number(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try single character tokens
+        if (pos < len) {
+            char c = input[pos];
+            switch (c) {
+                case '<':
+                    print_str("[LEXER] SINGLE-CHAR < token at pos "); print_num(pos); print_str("\n");
+                    tok->type = TOK_LT;
+                    tok->len = 1;
                     pos++;
-                }
-            }
-            
-            if (pos < len && input[pos] == '"') {
-                pos++; // Include closing quote
-                tok->type = TOK_STRING;
-                tok->len = pos - start;
-                token_count++;
-                continue;
+                    token_count++;
+                    continue;
+                case '>':
+                    tok->type = TOK_GT;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '/':
+                    tok->type = TOK_SLASH;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '\\':
+                    tok->type = TOK_BACKSLASH;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '|':
+                    tok->type = TOK_PIPE;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '[':
+                    tok->type = TOK_BRACKET_OPEN;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case ']':
+                    tok->type = TOK_BRACKET_CLOSE;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '^':
+                    tok->type = TOK_JUMP_MARKER;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '!':
+                    tok->type = TOK_BANG;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '.':
+                    tok->type = TOK_DOT;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '_':
+                    tok->type = TOK_UNDERSCORE;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '@':
+                    tok->type = TOK_AT;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case ';':
+                    tok->type = TOK_SEMICOLON;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '%':
+                    tok->type = TOK_PERCENT;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '=':
+                    tok->type = TOK_EQUALS;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '(':
+                    tok->type = TOK_LPAREN;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case ')':
+                    tok->type = TOK_RPAREN;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '{':
+                    tok->type = TOK_LBRACE;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '}':
+                    tok->type = TOK_RBRACE;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case ':':
+                    tok->type = TOK_COLON;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '-':
+                    tok->type = TOK_MINUS;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '*':
+                    tok->type = TOK_STAR;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case ',':
+                    tok->type = TOK_COMMA;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                case '+':
+                    tok->type = TOK_PLUS;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
+                default:
+                    if (c == '<') {
+                        print_str("[LEXER] DEFAULT CASE: treating '<' as single-char token at pos ");
+                        print_num(pos);
+                        print_str("\n");
+                    }
+                    print_str("[LEXER] Unknown character '");
+                    char buf[2] = {c, '\0'};
+                    print_str(buf);
+                    print_str("' at pos "); print_num(pos); print_str("\n");
+                    tok->type = TOK_ERROR;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
             }
         }
         
-        // Single character tokens
-        char ch = input[pos];
-        switch (ch) {
-            case '|': tok->type = TOK_PIPE; break;
-            case '/': tok->type = TOK_SLASH; break;
-            case '\\': tok->type = TOK_BACKSLASH; break;
-            case '^': tok->type = TOK_JUMP_MARKER; break;
-            case '!': tok->type = TOK_BANG; break;
-            case ':': tok->type = TOK_COLON; break;
-            case '*': tok->type = TOK_STAR; break;
-            case '-': tok->type = TOK_MINUS; break;
-            case '[': tok->type = TOK_BRACKET_OPEN; break;
-            case ']': tok->type = TOK_BRACKET_CLOSE; break;
-            case '.': tok->type = TOK_DOT; break;
-            case '_': tok->type = TOK_UNDERSCORE; break;
-            case '@': tok->type = TOK_AT; break;
-            case ';': tok->type = TOK_SEMICOLON; break;
-            case ',': tok->type = TOK_COMMA; break;
-            case '%': tok->type = TOK_PERCENT; break;
-            case '=': tok->type = TOK_EQUALS; break;
-            case '(': tok->type = TOK_LPAREN; break;
-            case ')': tok->type = TOK_RPAREN; break;
-            case '{': tok->type = TOK_LBRACE; break;
-            case '}': tok->type = TOK_RBRACE; break;
-            default:
-                tok->type = TOK_ERROR;
-                break;
-        }
-        
+        // If we get here, we couldn't parse anything
+        print_str("[LEXER] Failed to parse at pos "); print_num(pos); print_str("\n");
+        tok->type = TOK_ERROR;
         tok->len = 1;
         pos++;
         token_count++;
@@ -884,6 +1019,30 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
         token_count++;
     }
     
+    uint32_t result = token_count;
+    // Debug: print first 10 tokens and their text
+    print_str("[LEXER DEBUG] First 10 tokens:\n");
+    for (uint32_t i = 0; i < result && i < 10; i++) {
+        Token* t = &output[i];
+        print_str("  token["); print_num(i); print_str("]: type="); print_num(t->type);
+        print_str(" start="); print_num(t->start);
+        print_str(" len="); print_num(t->len);
+        print_str(" text='");
+        for (uint32_t j = 0; j < t->len; j++) {
+            char c = input[t->start + j];
+            if (c >= 32 && c <= 126) {
+                char buf[2] = {c, '\0'};
+                print_str(buf);
+            } else if (c == '\n') {
+                print_str("\\n");
+            } else {
+                print_str("?");
+            }
+        }
+        print_str("'\n");
+    }
+    
+    print_str("[LEXER] EXITING lex_blaze\n");
     return token_count;
 }
 
