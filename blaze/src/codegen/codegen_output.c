@@ -4,10 +4,10 @@
 #include "blaze_internals.h"
 
 // Helper to emit string output using platform-aware print
-static void emit_write_string(CodeBuffer* buf, const char* str, uint32_t len) {
+static void emit_write_string(CodeBuffer* buf, volatile const char* str, uint32_t len) {
     // Use the platform-aware print function
     extern void emit_platform_print_string(CodeBuffer* buf, Platform platform, 
-                                         const char* str, uint32_t len);
+                                         volatile const char* str, uint32_t len);
     emit_platform_print_string(buf, buf->target_platform, str, len);
 }
 

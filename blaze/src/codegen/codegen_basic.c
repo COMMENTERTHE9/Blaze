@@ -27,10 +27,7 @@ extern void generate_identifier(CodeBuffer* buf, ASTNode* nodes, uint16_t node_i
                                 SymbolTable* symbols, char* string_pool);
 
 // SSE register definitions
-typedef enum {
-    XMM0 = 0, XMM1 = 1, XMM2 = 2, XMM3 = 3,
-    XMM4 = 4, XMM5 = 5, XMM6 = 6, XMM7 = 7
-} SSERegister;
+
 
 // Forward declarations for SSE instructions
 extern void emit_movsd_xmm_imm(CodeBuffer* buf, SSERegister reg, double value);
@@ -49,6 +46,9 @@ extern void generate_func_def(CodeBuffer* buf, ASTNode* nodes, uint16_t func_idx
                              SymbolTable* symbols, char* string_pool);
 extern void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_idx,
                               SymbolTable* symbols, char* string_pool);
+
+extern void generate_conditional(CodeBuffer* buf, ASTNode* nodes, uint16_t cond_idx,
+                               SymbolTable* symbols, char* string_pool);
 
 // Forward declaration for float printing
 extern void generate_print_float(CodeBuffer* buf);
@@ -1418,6 +1418,10 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
             generate_func_call(buf, nodes, stmt_idx, symbols, string_pool);
             break;
             
+        case NODE_CONDITIONAL:
+            generate_conditional(buf, nodes, stmt_idx, symbols, string_pool);
+            break;
+            
         case NODE_DECLARE_BLOCK:
             // Declare blocks contain function definitions that should be handled
             // during the declare pass in main, not during regular statement generation
@@ -1428,4 +1432,56 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
             // Skip other node types for now
             break;
     }
+}
+
+// Generate code for conditional statements (if/else, while, etc.)
+void generate_conditional(CodeBuffer* buf, ASTNode* nodes, uint16_t cond_idx,
+                         SymbolTable* symbols, char* string_pool) {
+    if (cond_idx == 0 || cond_idx >= 4096) {
+        print_str("generate_conditional: invalid cond_idx ");
+        print_num(cond_idx);
+        print_str("\n");
+        return;
+    }
+    
+    ASTNode* cond_node = &nodes[cond_idx];
+    if (cond_node->type != NODE_CONDITIONAL) {
+        print_str("generate_conditional: not a conditional node\n");
+        return;
+    }
+    
+    print_str("[COND] Generating conditional with op=");
+    print_num(cond_node->data.binary.op);
+    print_str("\n");
+    
+    // Get the condition parameter and body
+    uint16_t param_idx = cond_node->data.binary.left_idx;
+    uint16_t body_idx = cond_node->data.binary.right_idx;
+    
+    // Generate the condition expression
+    if (param_idx != 0 && param_idx < 4096) {
+        generate_expression(buf, nodes, param_idx, symbols, string_pool);
+        // Result is now in RAX
+    }
+    
+    // For now, implement basic if/else logic
+    // Test RAX (condition result)
+    emit_test_reg_reg(buf, RAX, RAX);
+    
+    // Jump if zero (condition is false)
+    emit_byte(buf, 0x74); // JZ
+    uint32_t jump_pos = buf->position;
+    emit_byte(buf, 0x00); // Placeholder offset
+    
+    // Generate the body (true case)
+    if (body_idx != 0 && body_idx < 4096) {
+        generate_statement(buf, nodes, body_idx, symbols, string_pool);
+    }
+    
+    // Calculate jump offset to skip the body
+    uint32_t body_end = buf->position;
+    int8_t jump_offset = body_end - (jump_pos + 1);
+    buf->code[jump_pos] = jump_offset;
+    
+    print_str("[COND] Conditional generation complete\n");
 }

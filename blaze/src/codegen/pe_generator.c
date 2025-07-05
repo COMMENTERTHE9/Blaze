@@ -375,7 +375,7 @@ void write_pe_file(const char* filename, uint8_t* data, uint32_t size) {
     // This would need platform-specific file I/O
     // For now, we'll use the syscall wrappers from ELF
     extern int syscall_open(const char* filename, int flags, int mode);
-    extern int syscall_write(int fd, const void* buf, size_t count);
+    extern int syscall_write(int fd, volatile const void* buf, size_t count);
     extern int syscall_close(int fd);
     
     int fd = syscall_open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0755);

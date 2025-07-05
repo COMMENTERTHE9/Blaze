@@ -15,10 +15,7 @@ extern void emit_sub_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
 extern void emit_sub_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
 
 // SSE register definitions
-typedef enum {
-    XMM0 = 0, XMM1 = 1, XMM2 = 2, XMM3 = 3,
-    XMM4 = 4, XMM5 = 5, XMM6 = 6, XMM7 = 7
-} SSERegister;
+
 
 // Forward declarations for SSE/float operations
 extern void emit_movsd_xmm_mem(CodeBuffer* buf, SSERegister dst, X64Register base);

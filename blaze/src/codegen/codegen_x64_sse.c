@@ -3,18 +3,16 @@
 
 #include "blaze_internals.h"
 
+
+
+// Forward declarations for x64 instruction emitters
+
+
 // Forward declarations for x64 instruction emitters
 void emit_mov_reg_imm64(CodeBuffer* buf, X64Register reg, uint64_t value);
 void emit_push_reg(CodeBuffer* buf, X64Register reg);
 void emit_add_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
-
-// SSE register encoding (XMM0-XMM15)
-typedef enum {
-    XMM0 = 0, XMM1 = 1, XMM2 = 2, XMM3 = 3,
-    XMM4 = 4, XMM5 = 5, XMM6 = 6, XMM7 = 7,
-    XMM8 = 8, XMM9 = 9, XMM10 = 10, XMM11 = 11,
-    XMM12 = 12, XMM13 = 13, XMM14 = 14, XMM15 = 15
-} SSERegister;
+void emit_movsd_xmm_mem(CodeBuffer* buf, SSERegister dst, X64Register base); // Forward declaration
 
 // Forward declarations
 void emit_byte(CodeBuffer* buf, uint8_t byte);

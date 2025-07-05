@@ -2,10 +2,7 @@
 #include "blaze_internals.h"
 
 // SSE register definitions
-typedef enum {
-    XMM0 = 0, XMM1 = 1, XMM2 = 2, XMM3 = 3,
-    XMM4 = 4, XMM5 = 5, XMM6 = 6, XMM7 = 7
-} SSERegister;
+
 
 // Forward declarations
 extern void emit_byte(CodeBuffer* buf, uint8_t byte);
