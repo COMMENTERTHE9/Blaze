@@ -2301,13 +2301,28 @@ static uint16_t parse_statement(Parser* p) {
             advance(p);
         }
         
-        // Parse content (identifier, number, or string)
-        Token* next_tok = peek(p);
-        
-        if (check(p, TOK_IDENTIFIER) || check(p, TOK_VAR) || 
+        // Parse content - handle string that may be tokenized as separate parts
+        if (check(p, TOK_STRING)) {
+            // Parse string normally if it's a single token
+            Token* str_tok = advance(p);
+            
+            // Create a NODE_STRING to hold the string literal
+            uint16_t str_node = alloc_node(p, NODE_STRING);
+            if (str_node == 0) return 0;
+            
+            uint32_t str_offset = store_string_literal(p, str_tok);
+            p->nodes[str_node].data.ident.name_offset = str_offset;
+            p->nodes[str_node].data.ident.name_len = str_tok->len - 2; // Exclude quotes
+            
+            print_str("[PARSER] Created NODE_STRING at idx=");
+            print_num(str_node);
+            print_str(" for print statement\n");
+            
+            p->nodes[output_node].data.output.content_idx = str_node;
+        } else if (check(p, TOK_STRING) || (check(p, TOK_IDENTIFIER) || check(p, TOK_VAR) || 
             check(p, TOK_VAR_INT) || check(p, TOK_VAR_FLOAT) || 
             check(p, TOK_VAR_STRING) || check(p, TOK_VAR_BOOL) || 
-            check(p, TOK_CONST)) {
+            check(p, TOK_CONST))) {
             // Parse identifier or variable reference
             Token* tok = advance(p);
             uint16_t id_node = alloc_node(p, NODE_IDENTIFIER);
@@ -2329,29 +2344,10 @@ static uint16_t parse_statement(Parser* p) {
                     if (name_len > 0 && p->source[tok->start + tok->len - 1] == '-') {
                         name_len--;
                     }
-                } else if (tok->len > 4 && tok->type == TOK_VAR) {
-                    // Could be var.v- or var.name- syntax
-                    if (tok->len > 6 && str_equals(&p->source[tok->start], "var.v-", 6)) {
-                        name_start = tok->start + 6;
-                        name_len = tok->len - 6;
-                        if (name_len > 0 && p->source[tok->start + tok->len - 1] == '-') {
-                            name_len--;
-                        }
-                    } else {
-                        // var.name- syntax
-                        name_start = tok->start + 4;
-                        name_len = 0;
-                        for (uint32_t i = 4; i < tok->len; i++) {
-                            if (p->source[tok->start + i] == '-') {
-                                break;
-                            }
-                            name_len++;
-                        }
-                    }
                 }
             }
             
-            // Store the variable name
+            // Store name in string pool
             uint32_t name_offset = p->string_pos;
             for (uint32_t i = 0; i < name_len; i++) {
                 p->string_pool[p->string_pos++] = p->source[name_start + i];
@@ -2362,29 +2358,55 @@ static uint16_t parse_statement(Parser* p) {
             p->nodes[id_node].data.ident.name_len = name_len;
             
             p->nodes[output_node].data.output.content_idx = id_node;
+        } else if (peek(p) && peek(p)->type == 138) { // Quote token
+            // Handle string that was tokenized as separate parts: " + words + "
+            advance(p); // consume opening quote
+            
+            // Collect all tokens until closing quote
+            uint32_t str_start = p->string_pos;
+            while (!at_end(p) && peek(p) && peek(p)->type != 138 && peek(p)->type != TOK_BACKSLASH) {
+                Token* word_tok = advance(p);
+                
+                // Add space between words (except for punctuation)
+                if (p->string_pos > str_start && word_tok->type != 58) { // 58 = '!'
+                    p->string_pool[p->string_pos++] = ' ';
+                }
+                
+                // Copy word content
+                for (uint32_t i = 0; i < word_tok->len; i++) {
+                    p->string_pool[p->string_pos++] = p->source[word_tok->start + i];
+                }
+            }
+            
+            // Consume closing quote if present
+            if (peek(p) && peek(p)->type == 138) {
+                advance(p);
+            }
+            
+            // Null terminate the reconstructed string
+            p->string_pool[p->string_pos++] = '\0';
+            uint32_t str_len = p->string_pos - str_start - 1; // Exclude null terminator
+            
+            // Create string node
+            uint16_t str_node = alloc_node(p, NODE_STRING);
+            if (str_node == 0) return 0;
+            
+            p->nodes[str_node].data.ident.name_offset = str_start;
+            p->nodes[str_node].data.ident.name_len = str_len;
+            
+            print_str("[PARSER] Created reconstructed NODE_STRING at idx=");
+            print_num(str_node);
+            print_str(" len=");
+            print_num(str_len);
+            print_str("\n");
+            
+            p->nodes[output_node].data.output.content_idx = str_node;
         } else if (check(p, TOK_NUMBER) || check(p, TOK_MINUS) || 
                    check(p, TOK_LPAREN) || check(p, TOK_MATH_PREFIX) ||
                    check(p, TOK_SOLID_NUMBER)) {
             // Parse expression (could be number, arithmetic, math function, solid number, etc.)
             uint16_t expr_node = parse_expression(p);
             p->nodes[output_node].data.output.content_idx = expr_node;
-        } else if (check(p, TOK_STRING)) {
-            // Parse string
-            Token* str_tok = advance(p);
-            
-            // Create a NODE_STRING to hold the string literal
-            uint16_t str_node = alloc_node(p, NODE_STRING);
-            if (str_node == 0) return 0;
-            
-            uint32_t str_offset = store_string_literal(p, str_tok);
-            p->nodes[str_node].data.ident.name_offset = str_offset;
-            p->nodes[str_node].data.ident.name_len = str_tok->len - 2; // Exclude quotes
-            
-            print_str("[PARSER] Created NODE_STRING at idx=");
-            print_num(str_node);
-            print_str(" for print statement\n");
-            
-            p->nodes[output_node].data.output.content_idx = str_node;
         } else {
             // No content - set to invalid
             p->nodes[output_node].data.output.content_idx = 0xFFFF;
@@ -2568,8 +2590,9 @@ static int is_blaze_statement_start(Token* token, const char* source) {
             return 1;
         }
     }
-    // Special Blaze tokens
-    if (token->type == TOK_PIPE || token->type == TOK_JUMP_MARKER || token->type == TOK_BANG || token->type == TOK_COMMENT) {
+    // Special Blaze tokens and output methods
+    if (token->type == TOK_PIPE || token->type == TOK_JUMP_MARKER || token->type == TOK_BANG || token->type == TOK_COMMENT ||
+        token->type == TOK_PRINT || token->type == TOK_TXT || token->type == TOK_OUT || token->type == TOK_FMT || token->type == TOK_DYN) {
         return 1;
     }
     return 0;
@@ -2599,7 +2622,29 @@ static void skip_to_end_of_line(Parser* parser, const char* source) {
         if (t->type == TOK_EOF) {
             break;
         }
+        
+        // Check if this token is on a new line by looking at its start position
+        // compared to the previous token
+        if (parser->current > 0) {
+            Token* prev = &parser->tokens[parser->current - 1];
+            // If there's a significant gap in positions, we likely hit a newline
+            if (t->start > prev->start + prev->len + 10) {  // Allow for some whitespace
+                break;
+            }
+        }
+        
         parser->current++;
+        
+        // Also break if we hit a newline character in the source
+        if (parser->current < parser->count) {
+            Token* next = &parser->tokens[parser->current];
+            // Check if there's a newline between current and next token
+            for (uint32_t i = t->start + t->len; i < next->start && i < 4096; i++) {
+                if (source[i] == '\n') {
+                    return;  // Found newline, stop here
+                }
+            }
+        }
     }
 }
 
@@ -2624,6 +2669,8 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
     }
     
     // === MAIN PARSER LOOP: SMART CONTENT FILTERING ===
+    uint16_t first_stmt = 0;
+    uint16_t last_stmt = 0;
     while (!at_end(&parser)) {
         print_str("[PARSER] Loop iteration: current=");
         print_num(parser.current);
@@ -2639,12 +2686,38 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
             continue;
         }
         
+        // DEBUG: Print current token after skipping documentation
+        if (current_tok) {
+            print_str("[PARSER] Current token: type=");
+            print_num(current_tok->type);
+            print_str(" start=");
+            print_num(current_tok->start);
+            print_str(" len=");
+            print_num(current_tok->len);
+            print_str(" text='");
+            for (uint16_t i = 0; i < current_tok->len && i < 20; i++) {
+                char c = parser.source[current_tok->start + i];
+                char buf[2] = {c, '\0'};
+                print_str(buf);
+            }
+            print_str("'\n");
+        } else {
+            print_str("[PARSER] Current token: NULL\n");
+        }
+        
         // TIER 2: Parse valid Blaze statements
         if (current_tok && is_blaze_statement_start(current_tok, parser.source)) {
             print_str("[PARSER] Parsing Blaze statement\n");
             uint16_t stmt = parse_statement(&parser);
             if (stmt != 0xFFFF) {
-                // For now, just track that we parsed a statement
+                // Chain statements to program node
+                if (first_stmt == 0) {
+                    parser.nodes[program_node].data.binary.left_idx = stmt;
+                    first_stmt = stmt;
+                } else if (last_stmt != 0 && last_stmt < parser.node_count) {
+                    parser.nodes[last_stmt].data.binary.right_idx = stmt;
+                }
+                last_stmt = stmt;
                 print_str("[PARSER] Successfully parsed statement: ");
                 print_num(stmt);
                 print_str("\n");
@@ -2662,12 +2735,23 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
         }
         
         // If we get here, try to parse as a general statement
+        print_str("[PARSER] Trying general statement parsing\n");
         uint16_t stmt = parse_statement(&parser);
         if (stmt != 0xFFFF) {
-            // For now, just track that we parsed a statement
+            // Chain statements to program node
+            if (first_stmt == 0) {
+                parser.nodes[program_node].data.binary.left_idx = stmt;
+                first_stmt = stmt;
+            } else if (last_stmt != 0 && last_stmt < parser.node_count) {
+                parser.nodes[last_stmt].data.binary.right_idx = stmt;
+            }
+            last_stmt = stmt;
             print_str("[PARSER] Successfully parsed general statement: ");
             print_num(stmt);
             print_str("\n");
+        } else {
+            print_str("[PARSER] General statement parsing failed, advancing token\n");
+            advance(&parser);
         }
     }
     
