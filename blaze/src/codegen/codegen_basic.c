@@ -1329,9 +1329,75 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
     }
 }
 
+// Node chain verification function
+bool verify_node_chain(ASTNode* nodes, uint16_t start_idx, const char* context) {
+    if (start_idx >= MAX_NODES) {
+        printf("ERROR: Node index %d exceeds MAX_NODES in %s\n", start_idx, context);
+        return false;
+    }
+
+    ASTNode* current = &nodes[start_idx];
+    int depth = 0;
+    const int MAX_DEPTH = 1000; // Prevent infinite loops
+    
+    while (current && depth < MAX_DEPTH) {
+        // Verify node type is valid
+        if (current->type < 0 || current->type >= NODE_TYPE_MAX) {
+            printf("ERROR: Invalid node type %d at index %d in %s\n", 
+                   current->type, start_idx, context);
+            return false;
+        }
+        
+        // Verify child indices
+        if (current->left_child >= MAX_NODES) {
+            printf("ERROR: Left child index %d exceeds MAX_NODES at node %d in %s\n",
+                   current->left_child, start_idx, context);
+            return false;
+        }
+        if (current->right_child >= MAX_NODES) {
+            printf("ERROR: Right child index %d exceeds MAX_NODES at node %d in %s\n",
+                   current->right_child, start_idx, context);
+            return false;
+        }
+        
+        // Move to next node
+        if (current->next_sibling >= MAX_NODES) {
+            break;
+        }
+        current = &nodes[current->next_sibling];
+        depth++;
+    }
+    
+    if (depth >= MAX_DEPTH) {
+        printf("ERROR: Node chain exceeded maximum depth in %s. Possible circular reference.\n",
+               context);
+        return false;
+    }
+    
+    return true;
+}
+
 // Generate code for a statement
 void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                         SymbolTable* symbols, char* string_pool) {
+    // Add node chain verification
+    if (!verify_node_chain(nodes, stmt_idx, "generate_statement")) {
+        printf("FATAL: Node chain verification failed in generate_statement\n");
+        exit(1);
+    }
+
+    // Add detailed node diagnostics
+    printf("DEBUG: Processing statement node %d of type %d\n", stmt_idx, nodes[stmt_idx].type);
+    if (nodes[stmt_idx].left_child != UINT16_MAX) {
+        printf("DEBUG: Statement has left child: %d\n", nodes[stmt_idx].left_child);
+    }
+    if (nodes[stmt_idx].right_child != UINT16_MAX) {
+        printf("DEBUG: Statement has right child: %d\n", nodes[stmt_idx].right_child);
+    }
+    if (nodes[stmt_idx].next_sibling != UINT16_MAX) {
+        printf("DEBUG: Statement has next sibling: %d\n", nodes[stmt_idx].next_sibling);
+    }
+
     // Validate buffer pointer
     if (!buf || !buf->code) {
         return;

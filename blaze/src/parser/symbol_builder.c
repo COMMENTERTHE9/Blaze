@@ -2,6 +2,7 @@
 // Handles temporal scoping and forward references
 
 #include "blaze_internals.h"
+#include <stdio.h>
 
 // Forward declarations from symbol_table.c
 void symbol_table_init(SymbolTable* table, char* string_pool);
@@ -739,4 +740,32 @@ void debug_print_symbols(SymbolTable* table) {
     }
     
     print_str("=== END SYMBOLS ===\n");
+}
+
+// Add tracking to node modifications
+void track_node_modification(ASTNode* node, uint16_t node_idx, const char* operation) {
+    printf("SYMBOL_DEBUG: Node %d modified during %s\n", node_idx, operation);
+    printf("             Type: %d\n", node->type);
+    printf("             Left Child: %d\n", node->left_child);
+    printf("             Right Child: %d\n", node->right_child);
+    printf("             Next Sibling: %d\n", node->next_sibling);
+    printf("             Token Index: %d\n", node->token_idx);
+}
+
+// Add this to functions that modify nodes
+void modify_node_links(ASTNode* node, uint16_t node_idx, 
+                      uint16_t new_left, uint16_t new_right, uint16_t new_sibling,
+                      const char* operation) {
+    // Track before modification
+    printf("SYMBOL_DEBUG: Before %s on node %d\n", operation, node_idx);
+    track_node_modification(node, node_idx, "before modification");
+    
+    // Make modifications
+    if (new_left != UINT16_MAX) node->left_child = new_left;
+    if (new_right != UINT16_MAX) node->right_child = new_right;
+    if (new_sibling != UINT16_MAX) node->next_sibling = new_sibling;
+    
+    // Track after modification
+    printf("SYMBOL_DEBUG: After %s on node %d\n", operation, node_idx);
+    track_node_modification(node, node_idx, "after modification");
 }
