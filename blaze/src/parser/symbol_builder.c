@@ -165,11 +165,22 @@ static void process_var_def(SymbolBuilder* builder, uint16_t node_idx) {
 
 // Process function definition
 static void process_func_def(SymbolBuilder* builder, uint16_t node_idx) {
+    print_str("[SYMBOL] Processing function definition at node_idx=");
+    print_num(node_idx);
+    print_str("\n");
+    
     ASTNode* node = &builder->nodes[node_idx];
     
-    // Get function name from expr_idx
-    uint16_t name_idx = node->data.timing.expr_idx;
+    // Get function name from temporal_offset (upper 16 bits)
+    uint16_t name_idx = (node->data.timing.temporal_offset >> 16) & 0xFFFF;
+    print_str("[SYMBOL] Function name_idx from temporal_offset: ");
+    print_num(name_idx);
+    print_str("\n");
+    
     if (name_idx == 0 || name_idx >= builder->node_count) {
+        print_str("[SYMBOL] ERROR: Invalid name_idx=");
+        print_num(name_idx);
+        print_str("\n");
         builder->has_error = true;
         builder->error_node = node_idx;
         return;
@@ -177,6 +188,9 @@ static void process_func_def(SymbolBuilder* builder, uint16_t node_idx) {
     
     ASTNode* name_node = &builder->nodes[name_idx];
     if (name_node->type != NODE_IDENTIFIER) {
+        print_str("[SYMBOL] ERROR: Function name is not an identifier, type=");
+        print_num(name_node->type);
+        print_str("\n");
         builder->has_error = true;
         builder->error_node = node_idx;
         return;
@@ -185,21 +199,24 @@ static void process_func_def(SymbolBuilder* builder, uint16_t node_idx) {
     const char* name = &builder->string_pool[name_node->data.ident.name_offset];
     uint16_t name_len = name_node->data.ident.name_len;
     
-    // Count parameters
-    uint16_t param_count = node->data.binary.op;
-    uint16_t current_param = 0;
-    uint16_t param_idx = node->data.binary.left_idx; // First parameter
-    
-    // Count actual parameters
-    while (param_idx != 0 && current_param < 6 && param_idx < builder->node_count) {
-        current_param++;
-        ASTNode* param_node = &builder->nodes[param_idx];
-        param_idx = param_node->data.binary.right_idx; // Next parameter
+    print_str("[SYMBOL] Function name: ");
+    for (uint16_t i = 0; i < name_len && i < 32; i++) {
+        print_num(name[i]);
+        print_str(" ");
     }
+    print_str(" (len=");
+    print_num(name_len);
+    print_str(")\n");
+    
+    // For now, assume no parameters (functions are simple)
+    uint16_t param_count = 0;
+    print_str("[SYMBOL] Function has ");
+    print_num(param_count);
+    print_str(" parameters\n");
     
     // Add function to symbol table
     Symbol* sym = symbol_add_function(builder->table, name, name_len, 
-                                     node_idx, current_param);
+                                     node_idx, param_count);
     
     if (!sym) {
         builder->has_error = true;
@@ -215,42 +232,19 @@ static void process_func_def(SymbolBuilder* builder, uint16_t node_idx) {
     // Create new scope for function body
     symbol_push_scope(builder->table, false, 0);
     
-    // Process function parameters
-    param_idx = node->data.binary.left_idx; // Reset to first parameter
-    current_param = 0;
+    // Process function parameters (for now, no parameters)
+    print_str("[SYMBOL] No parameters to process\n");
     
-    while (param_idx != 0 && current_param < 6 && param_idx < builder->node_count) {
-        ASTNode* param_node = &builder->nodes[param_idx];
-        if (param_node->type == NODE_IDENTIFIER) {
-            // Parameter has name stored in binary structure
-            uint32_t name_offset = param_node->data.binary.left_idx;
-            const char* param_name = &builder->string_pool[name_offset];
-            uint16_t param_name_len = param_node->data.ident.name_len;
-            
-            // Add parameter to symbol table
-            Symbol* param_sym = symbol_add_variable(builder->table, param_name, param_name_len, 
-                                                   false, true); // Not temporal, mutable
-            if (param_sym) {
-                // Mark as function parameter
-                param_sym->type = SYMBOL_VARIABLE;
-                param_sym->storage = STORAGE_REGISTER;
-                param_sym->data.var.is_mutable = true;
-                
-                print_str("  Added function parameter: ");
-                print_str(param_name);
-                print_str("\n");
-            }
-        }
-        
-        // Move to next parameter
-        param_idx = param_node->data.binary.right_idx;
-        current_param++;
-    }
+    // Process function body (stored in left_idx)
+    uint16_t body_idx = node->data.binary.left_idx;
+    print_str("[SYMBOL] Function body_idx: ");
+    print_num(body_idx);
+    print_str("\n");
     
-    // Process function body
-    uint16_t body_idx = node->data.timing.temporal_offset;
     if (body_idx != 0 && body_idx < builder->node_count) {
         build_symbols_from_node(builder, body_idx);
+    } else {
+        print_str("[SYMBOL] WARNING: No function body found\n");
     }
     
     // Pop function scope
@@ -595,9 +589,57 @@ static void build_symbols_from_node(SymbolBuilder* builder, uint16_t node_idx) {
             break;
             
         case NODE_FUNC_CALL:
-            // Process function arguments if any
-            if (node->data.binary.left_idx > 0) {
-                build_symbols_from_node(builder, node->data.binary.left_idx);
+            // Process function call - look up function and process arguments
+            print_str("[SYMBOL] Processing function call at node_idx=");
+            print_num(node_idx);
+            print_str("\n");
+            
+            // Get function name from left_idx
+            uint16_t name_idx = node->data.binary.left_idx;
+            if (name_idx > 0 && name_idx < builder->node_count) {
+                ASTNode* name_node = &builder->nodes[name_idx];
+                if (name_node->type == NODE_IDENTIFIER) {
+                    const char* func_name = &builder->string_pool[name_node->data.ident.name_offset];
+                    uint16_t name_len = name_node->data.ident.name_len;
+                    
+                    print_str("[SYMBOL] Function call: ");
+                    for (uint16_t i = 0; i < name_len && i < 32; i++) {
+                        print_num(func_name[i]);
+                        print_str(" ");
+                    }
+                    print_str(" (len=");
+                    print_num(name_len);
+                    print_str(")\n");
+                    
+                    // Look up function in symbol table
+                    Symbol* func_sym = symbol_lookup(builder->table, func_name, name_len, false);
+                    if (!func_sym) {
+                        // Check for forward reference (temporal)
+                        func_sym = symbol_lookup(builder->table, func_name, name_len, true);
+                        if (!func_sym) {
+                            print_str("[SYMBOL] WARNING: Function '");
+                            for (uint16_t i = 0; i < name_len && i < 32; i++) {
+                                print_num(func_name[i]);
+                                print_str(" ");
+                            }
+                            print_str("' not found in symbol table\n");
+                            // Allow forward references for now (time-travel)
+                        } else {
+                            print_str("[SYMBOL] Found function via forward reference\n");
+                        }
+                    } else {
+                        print_str("[SYMBOL] Found function in symbol table\n");
+                    }
+                }
+            }
+            
+            // Process function arguments (stored in right_idx)
+            uint16_t arg_idx = node->data.binary.right_idx;
+            if (arg_idx > 0 && arg_idx < builder->node_count) {
+                print_str("[SYMBOL] Processing function arguments\n");
+                build_symbols_from_node(builder, arg_idx);
+            } else {
+                print_str("[SYMBOL] No arguments for function call\n");
             }
             break;
             

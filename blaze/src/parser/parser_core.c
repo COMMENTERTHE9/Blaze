@@ -1846,7 +1846,25 @@ static uint16_t parse_pipe_func_def(Parser* p) {
     }
     print_str("\n");
     
-    if (match(p, TOK_LT)) {
+    // Check if we already have an action block (the lexer might have consumed the <)
+    if (check(p, TOK_ACTION_START)) {
+        print_str("[PARSER] Found action block directly, parsing\n");
+        
+        // Now parse action block - this is the function body
+        uint16_t action = parse_action_block(p);
+        print_str("[PARSER] parse_action_block returned: ");
+        print_num(action);
+        print_str("\n");
+        
+        if (action == 0 || action == 0xFFFF) {
+            print_str("[PARSER] Error: action block failed\n");
+            p->has_error = true;
+            return 0;
+        }
+        // Store function body in left_idx to avoid conflict with statement chaining
+        p->nodes[func_node].data.binary.left_idx = action;
+        
+    } else if (match(p, TOK_LT)) {
         print_str("[PARSER] Found <, parsing action block\n");
         
         // Now parse action block - this is the function body
@@ -1863,30 +1881,28 @@ static uint16_t parse_pipe_func_def(Parser* p) {
         // Store function body in left_idx to avoid conflict with statement chaining
         p->nodes[func_node].data.binary.left_idx = action;
         
-        
-        
-        
-        // NOW look for :> at the END to close the function
-        print_str("[PARSER] Looking for :> to close function, current token: ");
-        if (p->current < p->count) {
-            print_num(p->tokens[p->current].type);
-        } else {
-            print_str("END");
-        }
-        print_str("\n");
-        
-        if (!match(p, TOK_BLOCK_END) && !match(p, TOK_FUNC_CLOSE)) {
-            print_str("[PARSER] Error: Expected :> to close function\n");
-            p->has_error = true;
-            return 0;
-        }
-        
-        print_str("[PARSER] Found :>, function parsing complete\n");
-        
     } else {
+        print_str("[PARSER] Error: Expected < or action block\n");
         p->has_error = true;
         return 0;
     }
+    
+    // NOW look for :> at the END to close the function
+    print_str("[PARSER] Looking for :> to close function, current token: ");
+    if (p->current < p->count) {
+        print_num(p->tokens[p->current].type);
+    } else {
+        print_str("END");
+    }
+    print_str("\n");
+    
+    if (!match(p, TOK_BLOCK_END) && !match(p, TOK_FUNC_CLOSE)) {
+        print_str("[PARSER] Error: Expected :> to close function\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    print_str("[PARSER] Found :>, function parsing complete\n");
     
     
     
@@ -2327,6 +2343,38 @@ static uint16_t parse_statement(Parser* p) {
         return call_node;
     }
     
+    // Function call: identifier followed by /
+    if (check(p, TOK_IDENTIFIER) && peek2(p) && peek2(p)->type == TOK_SLASH) {
+        Token* name_tok = advance(p); // consume identifier
+        advance(p); // consume /
+        
+        uint16_t call_node = alloc_node(p, NODE_FUNC_CALL);
+        if (call_node == 0) return 0;
+        
+        // Create identifier node for the function name
+        uint16_t name_node = alloc_node(p, NODE_IDENTIFIER);
+        if (name_node == 0) return 0;
+        
+        // Store name in string pool
+        uint32_t name_offset = p->string_pos;
+        if (p->string_pos + name_tok->len + 1 > 4096) {
+            p->has_error = true;
+            return 0;
+        }
+        for (uint32_t i = 0; i < name_tok->len; i++) {
+            p->string_pool[p->string_pos++] = p->source[name_tok->start + i];
+        }
+        p->string_pool[p->string_pos++] = '\0';
+        p->nodes[name_node].data.ident.name_offset = name_offset;
+        p->nodes[name_node].data.ident.name_len = name_tok->len;
+        
+        // Store function name in left_idx
+        p->nodes[call_node].data.binary.left_idx = name_node;
+        // No arguments for now
+        p->nodes[call_node].data.binary.right_idx = 0;
+        
+        return call_node;
+    }
     // Output methods
     if (check(p, TOK_PRINT) || check(p, TOK_TXT) || check(p, TOK_OUT) || 
         check(p, TOK_FMT) || check(p, TOK_DYN)) {
@@ -2762,11 +2810,37 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
             uint16_t stmt = parse_statement(&parser);
             if (stmt != 0xFFFF) {
                 // Chain statements to program node
+                print_str("[PARSER] Chaining statement ");
+                print_num(stmt);
+                print_str(" (first_stmt=");
+                print_num(first_stmt);
+                print_str(", last_stmt=");
+                print_num(last_stmt);
+                print_str(")\n");
+                
                 if (first_stmt == 0) {
                     parser.nodes[program_node].data.binary.left_idx = stmt;
                     first_stmt = stmt;
+                    print_str("[PARSER] Set as first statement\n");
                 } else if (last_stmt != 0 && last_stmt < parser.node_count) {
                     parser.nodes[last_stmt].data.binary.right_idx = stmt;
+                    print_str("[PARSER] Linked to previous statement ");
+                    print_num(last_stmt);
+                    print_str("\n");
+                    
+                    // If this is the second statement, also set program node's right_idx
+                    if (first_stmt != 0 && parser.nodes[program_node].data.binary.right_idx == 0) {
+                        parser.nodes[program_node].data.binary.right_idx = stmt;
+                        print_str("[PARSER] Set program right_idx to second statement ");
+                        print_num(stmt);
+                        print_str("\n");
+                    }
+                } else {
+                    print_str("[PARSER] WARNING: Could not link statement (last_stmt=");
+                    print_num(last_stmt);
+                    print_str(", node_count=");
+                    print_num(parser.node_count);
+                    print_str(")\n");
                 }
                 last_stmt = stmt;
                 print_str("[PARSER] Successfully parsed statement: ");
@@ -2790,11 +2864,37 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
         uint16_t stmt = parse_statement(&parser);
         if (stmt != 0xFFFF) {
             // Chain statements to program node
+            print_str("[PARSER] Chaining general statement ");
+            print_num(stmt);
+            print_str(" (first_stmt=");
+            print_num(first_stmt);
+            print_str(", last_stmt=");
+            print_num(last_stmt);
+            print_str(")\n");
+            
             if (first_stmt == 0) {
                 parser.nodes[program_node].data.binary.left_idx = stmt;
                 first_stmt = stmt;
+                print_str("[PARSER] Set as first statement\n");
             } else if (last_stmt != 0 && last_stmt < parser.node_count) {
                 parser.nodes[last_stmt].data.binary.right_idx = stmt;
+                print_str("[PARSER] Linked to previous statement ");
+                print_num(last_stmt);
+                print_str("\n");
+                
+                // If this is the second statement, also set program node's right_idx
+                if (first_stmt != 0 && parser.nodes[program_node].data.binary.right_idx == 0) {
+                    parser.nodes[program_node].data.binary.right_idx = stmt;
+                    print_str("[PARSER] Set program right_idx to second statement ");
+                    print_num(stmt);
+                    print_str("\n");
+                }
+            } else {
+                print_str("[PARSER] WARNING: Could not link statement (last_stmt=");
+                print_num(last_stmt);
+                print_str(", node_count=");
+                print_num(parser.node_count);
+                print_str(")\n");
             }
             last_stmt = stmt;
             print_str("[PARSER] Successfully parsed general statement: ");

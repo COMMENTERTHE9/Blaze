@@ -137,6 +137,20 @@ static uint32_t parse_identifier(const char* input, uint32_t pos, uint32_t len, 
         tok->type = TOK_BNC;
     } else if (word_len == 4 && match_string(input, start, len, "recv")) {
         tok->type = TOK_RECV;
+    } else if (word_len == 4 && match_string(input, start, len, "func")) {
+        // Check if this is followed by .can
+        if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "can")) {
+            tok->type = TOK_FUNC_CAN;
+            tok->len = pos + 4 - start; // Include the .can part
+            return pos + 4;
+        }
+    } else if (word_len == 4 && match_string(input, start, len, "verb")) {
+        // Check if this is followed by .can
+        if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "can")) {
+            tok->type = TOK_FUNC_CAN;
+            tok->len = pos + 4 - start; // Include the .can part
+            return pos + 4;
+        }
     }
     
     return pos;
@@ -851,12 +865,8 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
             continue;
         }
         
-        // Try function definition: |name|
-        if ((next_pos = parse_function_def(input, pos, len, tok)) != 0) {
-            pos = next_pos;
-            token_count++;
-            continue;
-        }
+        // Note: Function definitions like |name| are handled by parsing individual | tokens
+        // and identifiers separately, not as a single token
         
         // Try variable declaration
         if ((next_pos = parse_var_decl(input, pos, len, tok)) != 0) {
