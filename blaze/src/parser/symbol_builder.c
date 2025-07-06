@@ -312,7 +312,16 @@ static void process_timing_op(SymbolBuilder* builder, uint16_t node_idx) {
     switch (node->data.timing.timing_op) {
         case TOK_TIMING_ONTO:  // <<
         case TOK_TIMING_INTO:  // >>
+        case TOK_TIMING_BOTH:  // <>
+        case TOK_ONTO:         // <<
+        case TOK_INTO:         // >>
+        case TOK_BOTH:         // <>
+        case TOK_BEFORE:       // <
+        case TOK_AFTER:        // >
             symbol_push_scope(builder->table, true, node->data.timing.temporal_offset);
+            break;
+        default:
+            // No temporal scope needed for other operations
             break;
     }
     
@@ -325,7 +334,16 @@ static void process_timing_op(SymbolBuilder* builder, uint16_t node_idx) {
     switch (node->data.timing.timing_op) {
         case TOK_TIMING_ONTO:
         case TOK_TIMING_INTO:
+        case TOK_TIMING_BOTH:
+        case TOK_ONTO:
+        case TOK_INTO:
+        case TOK_BOTH:
+        case TOK_BEFORE:
+        case TOK_AFTER:
             symbol_pop_scope(builder->table);
+            break;
+        default:
+            // No temporal scope to pop for other operations
             break;
     }
 }
@@ -543,7 +561,65 @@ static void build_symbols_from_node(SymbolBuilder* builder, uint16_t node_idx) {
             break;
             
         case NODE_NUMBER:
+        case NODE_FLOAT:
+        case NODE_STRING:
+        case NODE_BOOL:
             // Nothing to do for literals
+            break;
+            
+        case NODE_EXPRESSION:
+            // Process the expression content
+            if (node->data.binary.left_idx > 0) {
+                build_symbols_from_node(builder, node->data.binary.left_idx);
+            }
+            break;
+            
+        case NODE_UNARY_OP:
+            // Process the operand
+            if (node->data.unary.expr_idx > 0) {
+                build_symbols_from_node(builder, node->data.unary.expr_idx);
+            }
+            break;
+            
+        case NODE_OUTPUT:
+            // Process the output content
+            if (node->data.output.content_idx > 0) {
+                build_symbols_from_node(builder, node->data.output.content_idx);
+            }
+            break;
+            
+        case NODE_INLINE_ASM:
+            // Nothing to do for inline assembly
+            break;
+            
+        case NODE_FUNC_CALL:
+            // Process function arguments if any
+            if (node->data.binary.left_idx > 0) {
+                build_symbols_from_node(builder, node->data.binary.left_idx);
+            }
+            break;
+            
+        case NODE_SOLID:
+            // Nothing to do for solid numbers
+            break;
+            
+        case NODE_DECLARE_BLOCK:
+            // Process declarations in the block
+            if (node->data.binary.left_idx > 0) {
+                build_symbols_from_node(builder, node->data.binary.left_idx);
+            }
+            break;
+            
+        case NODE_GAP_ANALYSIS:
+        case NODE_GAP_COMPUTE:
+        case NODE_TIMELINE_DEF:
+        case NODE_TIMELINE_JUMP:
+        case NODE_FIXED_POINT:
+        case NODE_PERMANENT_TIMELINE:
+        case NODE_FLOW_SPEC:
+        case NODE_RETURN:
+            // These node types are handled by specialized processors
+            // or don't require symbol table processing
             break;
             
         default:

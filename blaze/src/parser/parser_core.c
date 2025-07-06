@@ -1293,8 +1293,11 @@ static uint16_t parse_var_def(Parser* p) {
     // We'll use the timing.temporal_offset field which is 32-bit
     p->nodes[var_node].data.timing.temporal_offset = 0;  // Clear it first
     
-    // Don't store var_type in timing_op - it overlaps with ident fields!
-    // Instead, we'll determine var_type from the token type at codegen time
+    // Store var_type in the upper bits of temporal_offset
+    // This allows us to pass the variable type to code generation
+    p->nodes[var_node].data.timing.temporal_offset = var_type << 24;
+    
+    // We'll store the init_idx in the lower 16 bits later
     
     print_str("[PARSER] Created NODE_VAR_DEF at idx=");
     print_num(var_node);
@@ -1603,8 +1606,9 @@ static uint16_t parse_var_def(Parser* p) {
             print_num(init_expr);
             print_str(" in upper bits\n");
             
-            // Store init_expr in temporal_offset field
-            p->nodes[var_node].data.timing.temporal_offset = init_expr;
+                    // Store init_expr in lower 16 bits of temporal_offset, preserving var_type in upper bits
+        uint32_t current_offset = p->nodes[var_node].data.timing.temporal_offset;
+        p->nodes[var_node].data.timing.temporal_offset = (current_offset & 0xFF000000) | (init_expr & 0xFFFF);
         }
     }
     

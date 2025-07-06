@@ -348,11 +348,27 @@ void generate_var_def_new(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
     print_str("\n");
     
     uint32_t name_len = node->data.ident.name_len;
-    uint16_t init_idx = node->data.timing.temporal_offset;  // Init expr stored here
+    uint16_t init_idx = node->data.timing.temporal_offset & 0xFFFF;  // Init expr stored in lower 16 bits
     
-    // For now, determine var_type from the init expression type
+    // Get var_type from the node data (stored in upper bits of temporal_offset)
+    uint8_t stored_var_type = (node->data.timing.temporal_offset >> 24) & 0xFF;
     char var_type = 'v';  // Default
-    if (init_idx > 0 && init_idx < 4096) {
+    
+    // Map stored var_type to character code
+    switch (stored_var_type) {
+        case 0: var_type = 'v'; break;  // generic var
+        case 1: var_type = 'c'; break;  // const
+        case 2: var_type = 'i'; break;  // int
+        case 3: var_type = 'f'; break;  // float
+        case 4: var_type = 's'; break;  // string
+        case 5: var_type = 'b'; break;  // bool
+        case 6: var_type = 'd'; break;  // solid
+        case 7: var_type = 'c'; break;  // char
+        default: var_type = 'v'; break;
+    }
+    
+    // If no stored type, determine from init expression type
+    if (stored_var_type == 0 && init_idx > 0 && init_idx < 4096) {
         ASTNode* init_node = &nodes[init_idx];
         if (init_node->type == NODE_FLOAT) {
             var_type = 'f';

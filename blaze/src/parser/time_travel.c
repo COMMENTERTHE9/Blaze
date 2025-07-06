@@ -139,10 +139,12 @@ static void scan_temporal_patterns(TemporalResolver* resolver, uint16_t node_idx
     if (node->type == NODE_TIMING_OP) {
         switch (node->data.timing.timing_op) {
             case TOK_LT:  // < (BEFORE) - backward reference
+            case TOK_BEFORE:  // < (BEFORE) - backward reference
                 // This consumes a value from the past
                 break;
                 
             case TOK_TIMING_ONTO:  // << (ONTO) - strong backward flow
+            case TOK_ONTO:  // << (ONTO) - strong backward flow
                 // Creates strong temporal dependency
                 if (node->data.timing.temporal_offset < 0) {
                     // Mark for early execution
@@ -154,6 +156,7 @@ static void scan_temporal_patterns(TemporalResolver* resolver, uint16_t node_idx
                 break;
                 
             case TOK_TIMING_INTO:  // >> (INTO) - forward projection
+            case TOK_INTO:  // >> (INTO) - forward projection
                 // This creates a future value
                 ExecutionStep* step = &resolver->steps[resolver->step_count++];
                 step->node_idx = node_idx;
@@ -162,6 +165,7 @@ static void scan_temporal_patterns(TemporalResolver* resolver, uint16_t node_idx
                 break;
                 
             case TOK_TIMING_BOTH:  // <> (BOTH) - bidirectional
+            case TOK_BOTH:  // <> (BOTH) - bidirectional
                 // Can both consume and create temporal values
                 TimeLink* link = (TimeLink*)((char*)resolver->links + 
                                            resolver->link_count * sizeof(TimeLink));
@@ -169,6 +173,15 @@ static void scan_temporal_patterns(TemporalResolver* resolver, uint16_t node_idx
                 link->future_creator_idx = node_idx;
                 link->link_type = TEMPORAL_BOTH_WAYS;
                 resolver->link_count++;
+                break;
+                
+            case TOK_GT:  // > (AFTER) - forward reference
+            case TOK_AFTER:  // > (AFTER) - forward reference
+                // This creates a value for the future
+                break;
+                
+            default:
+                // Other timing operations don't create temporal dependencies
                 break;
         }
     }
