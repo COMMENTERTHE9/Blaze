@@ -3,6 +3,13 @@
 
 #include "blaze_internals.h"
 #include <stdio.h>
+#include <stdint.h>
+
+#define MAX_NODES 4096
+
+// Global node management
+static ASTNode nodes[MAX_NODES];
+static uint16_t next_free_node = 0;
 
 // Optimized string comparison - no strlen needed
 static inline bool str_equals(const char* a, const char* b, uint32_t len) {
@@ -74,6 +81,11 @@ static bool match(Parser* p, TokenType type) {
     return false;
 }
 
+// Simple node tracking
+static void track_node_creation(ASTNode* node, uint16_t node_idx) {
+    print_str("NODE_CREATED: idx="); print_num(node_idx); print_str(" type="); print_num(node->type); print_str("\n");
+}
+
 // Allocate AST node from pool
 static uint16_t alloc_node(Parser* p, NodeType type) {
     if (p->node_count >= p->node_capacity) {
@@ -92,14 +104,15 @@ static uint16_t alloc_node(Parser* p, NodeType type) {
     ASTNode* node = &p->nodes[idx];
     node->type = type;
     
-    // Disable verbose allocation debug for now
-    
     // Zero out data union - the union is larger than 2 uint64_t
     // Clear the entire union (max size is the inline_asm struct)
     uint8_t* data = (uint8_t*)&node->data;
     for (int i = 0; i < sizeof(node->data); i++) {
         data[i] = 0;
     }
+    
+    // Track node creation
+    track_node_creation(node, idx);
     
     return idx;
 }
@@ -2798,43 +2811,4 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
     print_str("\n");
     
     return program_node;
-}
-
-// Add node memory tracking
-void log_node_creation(ASTNode* node, uint16_t node_idx, const char* context) {
-    printf("DEBUG: Created node %d in %s\n", node_idx, context);
-    printf("       Type: %d\n", node->type);
-    printf("       Left Child: %d\n", node->left_child);
-    printf("       Right Child: %d\n", node->right_child);
-    printf("       Next Sibling: %d\n", node->next_sibling);
-    printf("       Token Index: %d\n", node->token_idx);
-}
-
-void log_node_modification(ASTNode* node, uint16_t node_idx, const char* context) {
-    printf("DEBUG: Modified node %d in %s\n", node_idx, context);
-    printf("       New Type: %d\n", node->type);
-    printf("       New Left Child: %d\n", node->left_child);
-    printf("       New Right Child: %d\n", node->right_child);
-    printf("       New Next Sibling: %d\n", node->next_sibling);
-    printf("       New Token Index: %d\n", node->token_idx);
-}
-
-// Find create_node function and add logging
-ASTNode* create_node(NodeType type, uint16_t token_idx) {
-    if (next_free_node >= MAX_NODES) {
-        printf("ERROR: Maximum number of nodes exceeded\n");
-        return NULL;
-    }
-    
-    ASTNode* node = &nodes[next_free_node++];
-    node->type = type;
-    node->token_idx = token_idx;
-    node->left_child = UINT16_MAX;
-    node->right_child = UINT16_MAX;
-    node->next_sibling = UINT16_MAX;
-    
-    // Add creation logging
-    log_node_creation(node, next_free_node - 1, "create_node");
-    
-    return node;
 }

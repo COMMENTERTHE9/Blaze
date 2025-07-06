@@ -3,6 +3,7 @@
 
 #include "blaze_internals.h"
 #include <stdio.h>
+#include <stdint.h>
 
 // Forward declarations from symbol_table.c
 void symbol_table_init(SymbolTable* table, char* string_pool);
@@ -742,30 +743,33 @@ void debug_print_symbols(SymbolTable* table) {
     print_str("=== END SYMBOLS ===\n");
 }
 
-// Add tracking to node modifications
-void track_node_modification(ASTNode* node, uint16_t node_idx, const char* operation) {
-    printf("SYMBOL_DEBUG: Node %d modified during %s\n", node_idx, operation);
-    printf("             Type: %d\n", node->type);
-    printf("             Left Child: %d\n", node->left_child);
-    printf("             Right Child: %d\n", node->right_child);
-    printf("             Next Sibling: %d\n", node->next_sibling);
-    printf("             Token Index: %d\n", node->token_idx);
+// Node tracking
+static void track_node_modification(ASTNode* node, uint16_t node_idx, const char* operation) {
+    print_str("SYMBOL_DEBUG: Node "); print_num(node_idx); print_str(" modified during "); print_str(operation); print_str("\n");
 }
 
 // Add this to functions that modify nodes
-void modify_node_links(ASTNode* node, uint16_t node_idx, 
-                      uint16_t new_left, uint16_t new_right, uint16_t new_sibling,
-                      const char* operation) {
+static void modify_node_data(ASTNode* node, uint16_t node_idx, 
+                     uint64_t data0, uint64_t data1, uint64_t data2,
+                     const char* operation) {
     // Track before modification
-    printf("SYMBOL_DEBUG: Before %s on node %d\n", operation, node_idx);
-    track_node_modification(node, node_idx, "before modification");
+    track_node_modification(node, node_idx, operation);
     
-    // Make modifications
-    if (new_left != UINT16_MAX) node->left_child = new_left;
-    if (new_right != UINT16_MAX) node->right_child = new_right;
-    if (new_sibling != UINT16_MAX) node->next_sibling = new_sibling;
+    // Update data fields
+    if (data0 != UINT64_MAX) node->data.number = data0;
+    if (data1 != UINT64_MAX) node->data.binary.left_idx = data1;
+    if (data2 != UINT64_MAX) node->data.binary.right_idx = data2;
     
     // Track after modification
-    printf("SYMBOL_DEBUG: After %s on node %d\n", operation, node_idx);
     track_node_modification(node, node_idx, "after modification");
+}
+
+// Simple symbol tracking
+static void track_symbol_creation(Symbol* sym, const char* name) {
+    print_str("SYMBOL_CREATED: "); print_str(name); print_str("\n");
+}
+
+// Simple scope tracking
+static void track_scope_operation(bool is_push, const char* context) {
+    print_str("SCOPE_"); print_str(is_push ? "PUSH" : "POP"); print_str(" in "); print_str(context); print_str("\n");
 }

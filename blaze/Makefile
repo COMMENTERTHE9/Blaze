@@ -3,7 +3,7 @@
 
 CC = gcc
 # Using -O3 for maximum performance (now working after syscall fixes)
-CFLAGS = -O3 -Wall -Wextra -fno-stack-protector -Iinclude
+CFLAGS = -O3 -Wall -Wextra -fno-stack-protector -Iinclude -Isrc
 # For -O1 optimized builds (now working):
 # CFLAGS = -O1 -mcmodel=large -fno-section-anchors -fno-pic -Wall -Wextra -fno-stack-protector -Iinclude
 LDFLAGS = -nostdlib -static
