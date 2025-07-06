@@ -1,6 +1,10 @@
 // Basic code generation for core Blaze operations
 
+#include <stdio.h>
+#include <stdlib.h>
 #include "blaze_internals.h"
+#include <stdint.h>
+#define MAX_NODES 4096
 
 // Define int8_t if not available
 typedef signed char int8_t;
@@ -49,6 +53,10 @@ extern void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_id
 
 extern void generate_conditional(CodeBuffer* buf, ASTNode* nodes, uint16_t cond_idx,
                                SymbolTable* symbols, char* string_pool);
+
+// Forward declaration for statement generation
+extern void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
+                              SymbolTable* symbols, char* string_pool);
 
 // Forward declaration for float printing
 extern void generate_print_float(CodeBuffer* buf);
@@ -1329,80 +1337,105 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
     }
 }
 
-// Node chain verification function
-bool verify_node_chain(ASTNode* nodes, uint16_t start_idx, const char* context) {
+// Codegen statistics
+static struct {
+    uint32_t nodes_processed;
+    uint32_t statements_generated;
+    uint32_t expressions_generated;
+    uint32_t functions_generated;
+    uint32_t errors_detected;
+    uint32_t max_recursion_depth;
+} codegen_stats = {0};
+
+// Enhanced node chain verification
+static bool verify_node_chain_enhanced(ASTNode* nodes, uint16_t start_idx, 
+                                     const char* context, int depth) {
+    if (depth > codegen_stats.max_recursion_depth) {
+        codegen_stats.max_recursion_depth = depth;
+    }
+    
     if (start_idx >= MAX_NODES) {
-        printf("ERROR: Node index %d exceeds MAX_NODES in %s\n", start_idx, context);
+        print_str("CODEGEN_ERROR: Node index "); print_num(start_idx); print_str(" exceeds MAX_NODES in "); print_str(context); print_str("\n");
+        codegen_stats.errors_detected++;
         return false;
     }
 
     ASTNode* current = &nodes[start_idx];
-    int depth = 0;
-    const int MAX_DEPTH = 1000; // Prevent infinite loops
+    codegen_stats.nodes_processed++;
     
-    while (current && depth < MAX_DEPTH) {
-        // Verify node type is valid
-        if (current->type < 0 || current->type >= NODE_TYPE_MAX) {
-            printf("ERROR: Invalid node type %d at index %d in %s\n", 
-                   current->type, start_idx, context);
-            return false;
-        }
-        
-        // Verify child indices
-        if (current->left_child >= MAX_NODES) {
-            printf("ERROR: Left child index %d exceeds MAX_NODES at node %d in %s\n",
-                   current->left_child, start_idx, context);
-            return false;
-        }
-        if (current->right_child >= MAX_NODES) {
-            printf("ERROR: Right child index %d exceeds MAX_NODES at node %d in %s\n",
-                   current->right_child, start_idx, context);
-            return false;
-        }
-        
-        // Move to next node
-        if (current->next_sibling >= MAX_NODES) {
-            break;
-        }
-        current = &nodes[current->next_sibling];
-        depth++;
-    }
-    
-    if (depth >= MAX_DEPTH) {
-        printf("ERROR: Node chain exceeded maximum depth in %s. Possible circular reference.\n",
-               context);
+    // Verify node type is valid
+    if (current->type < 0 || current->type >= NODE_TYPE_MAX) {
+        print_str("CODEGEN_ERROR: Invalid node type "); print_num(current->type); print_str(" at index "); print_num(start_idx); print_str(" in "); print_str(context); print_str("\n");
+        codegen_stats.errors_detected++;
         return false;
+    }
+
+    // Print node type and summary of union fields
+    print_str("[VERIFY] Node idx="); print_num(start_idx); print_str(" type="); print_num(current->type); print_str(" context="); print_str(context); print_str("\n");
+    switch (current->type) {
+        case NODE_NUMBER:
+            print_str("  number="); print_num(current->data.number); print_str("\n");
+            break;
+        case NODE_FLOAT:
+            print_str("  float_value=\n"); // No float print, just tag
+            break;
+        case NODE_IDENTIFIER:
+            print_str("  ident: name_offset="); print_num(current->data.ident.name_offset); print_str(" name_len="); print_num(current->data.ident.name_len); print_str("\n");
+            break;
+        case NODE_BINARY_OP:
+            print_str("  binary: op="); print_num(current->data.binary.op); print_str(" left_idx="); print_num(current->data.binary.left_idx); print_str(" right_idx="); print_num(current->data.binary.right_idx); print_str("\n");
+            break;
+        case NODE_TIMING_OP:
+            print_str("  timing: timing_op="); print_num(current->data.timing.timing_op); print_str(" expr_idx="); print_num(current->data.timing.expr_idx); print_str(" temporal_offset="); print_num(current->data.timing.temporal_offset); print_str("\n");
+            break;
+        case NODE_OUTPUT:
+            print_str("  output: output_type="); print_num(current->data.output.output_type); print_str(" content_idx="); print_num(current->data.output.content_idx); print_str(" next_output="); print_num(current->data.output.next_output); print_str("\n");
+            break;
+        case NODE_FUNC_DEF:
+            print_str("  func_def: expr_idx="); print_num(current->data.timing.expr_idx); print_str(" temporal_offset="); print_num(current->data.timing.temporal_offset); print_str("\n");
+            break;
+        case NODE_ACTION_BLOCK:
+        case NODE_PROGRAM:
+            print_str("  binary: left_idx="); print_num(current->data.binary.left_idx); print_str(" right_idx="); print_num(current->data.binary.right_idx); print_str("\n");
+            break;
+        default:
+            print_str("  [union fields not shown for this type]\n");
+            break;
+    }
+
+    // Check for specific node type requirements (keep as before)
+    switch (current->type) {
+        case NODE_PROGRAM:
+        case NODE_ACTION_BLOCK:
+            if (current->data.binary.left_idx >= MAX_NODES) {
+                print_str("CODEGEN_ERROR: Invalid left_idx in ");
+                print_str(current->type == NODE_PROGRAM ? "PROGRAM" : "ACTION_BLOCK");
+                print_str(" node at "); print_num(start_idx); print_str("\n");
+                codegen_stats.errors_detected++;
+            }
+            break;
+        case NODE_BINARY_OP:
+            if (current->data.binary.left_idx >= MAX_NODES ||
+                current->data.binary.right_idx >= MAX_NODES) {
+                print_str("CODEGEN_ERROR: Invalid operand in BINARY_OP at "); print_num(start_idx); print_str("\n");
+                codegen_stats.errors_detected++;
+            }
+            break;
+        case NODE_FUNC_DEF:
+            if (current->data.timing.expr_idx >= MAX_NODES ||
+                current->data.timing.temporal_offset >= MAX_NODES) {
+                print_str("CODEGEN_ERROR: Invalid function definition at "); print_num(start_idx); print_str("\n");
+                codegen_stats.errors_detected++;
+            }
+            break;
     }
     
     return true;
 }
 
-// Generate code for a statement
+// Generate code for a single statement
 void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
-                        SymbolTable* symbols, char* string_pool) {
-    // Add node chain verification
-    if (!verify_node_chain(nodes, stmt_idx, "generate_statement")) {
-        printf("FATAL: Node chain verification failed in generate_statement\n");
-        exit(1);
-    }
-
-    // Add detailed node diagnostics
-    printf("DEBUG: Processing statement node %d of type %d\n", stmt_idx, nodes[stmt_idx].type);
-    if (nodes[stmt_idx].left_child != UINT16_MAX) {
-        printf("DEBUG: Statement has left child: %d\n", nodes[stmt_idx].left_child);
-    }
-    if (nodes[stmt_idx].right_child != UINT16_MAX) {
-        printf("DEBUG: Statement has right child: %d\n", nodes[stmt_idx].right_child);
-    }
-    if (nodes[stmt_idx].next_sibling != UINT16_MAX) {
-        printf("DEBUG: Statement has next sibling: %d\n", nodes[stmt_idx].next_sibling);
-    }
-
-    // Validate buffer pointer
-    if (!buf || !buf->code) {
-        return;
-    }
-    
+                       SymbolTable* symbols, char* string_pool) {
     if (stmt_idx == 0 || stmt_idx >= 4096) {
         print_str("generate_statement: invalid stmt_idx ");
         print_num(stmt_idx);
@@ -1410,108 +1443,51 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
         return;
     }
     
-    // Add infinite loop detection
-    static uint16_t visited_nodes[100];
-    static uint16_t visited_count = 0;
-    static uint16_t recursion_depth = 0;
+    ASTNode* stmt_node = &nodes[stmt_idx];
     
-    // Check for infinite loop
-    for (uint16_t i = 0; i < visited_count; i++) {
-        if (visited_nodes[i] == stmt_idx) {
-            print_str("[STMT] ERROR: Infinite loop detected! Node ");
-            print_num(stmt_idx);
-            print_str(" already visited at depth ");
-            print_num(recursion_depth);
-            print_str("\n");
-            return;
-        }
-    }
-    
-    // Add current node to visited list
-    if (visited_count < 100) {
-        visited_nodes[visited_count++] = stmt_idx;
-    }
-    
-    recursion_depth++;
-    
-    // Debug for function generation removed - using tagged output instead
-    print_str("[STMT] generate_statement called with idx=");
+    print_str("[STMT] Generating statement type ");
+    print_num(stmt_node->type);
+    print_str(" at index ");
     print_num(stmt_idx);
-    print_str(" type=");
-    print_num(nodes[stmt_idx].type);
-    print_str(" depth=");
-    print_num(recursion_depth);
     print_str("\n");
     
-    ASTNode* node = &nodes[stmt_idx];
-    
-    // Defensive check for node validity
-    if (node->type > 100) {  // Assuming max valid node type is less than 100
-        print_str("generate_statement: ERROR - invalid node type ");
-        print_num(node->type);
-        print_str(" at index ");
-        print_num(stmt_idx);
-        print_str("\n");
+    // Verify node chain for this statement
+    if (!verify_node_chain_enhanced(nodes, stmt_idx, "generate_statement", 0)) {
+        print_str("CODEGEN_ERROR: Node chain verification failed for statement\n");
         return;
     }
     
-    print_str("[STMT] About to enter switch for node ");
-    print_num(stmt_idx);
-    print_str("\n");
-    
-    switch (node->type) {
+    switch (stmt_node->type) {
         case NODE_PROGRAM:
-            // Generate code for all statements in the program
-            {
-                uint16_t stmt = node->data.binary.left_idx;
-                while (stmt != 0 && stmt < 4096) {
-                    generate_statement(buf, nodes, stmt, symbols, string_pool);
-                    stmt = nodes[stmt].data.binary.right_idx;
-                }
+            // Program node - process its children (statements)
+            if (stmt_node->data.binary.left_idx != 0) {
+                generate_statement(buf, nodes, stmt_node->data.binary.left_idx, symbols, string_pool);
             }
-            break;
-            
-        case NODE_VAR_DEF:
-            print_str("[BASIC] Found NODE_VAR_DEF at index ");
-            print_num(stmt_idx);
-            print_str(" calling generate_var_def\n");
-            print_str("[BASIC] About to call with nodes=");
-            print_num((unsigned long)nodes);
-            print_str(" idx=");
-            print_num(stmt_idx);
-            print_str("\n");
-            generate_var_def(buf, nodes, stmt_idx, symbols, string_pool);
-            print_str("[BASIC] Returned from generate_var_def\n");
+            if (stmt_node->data.binary.right_idx != 0) {
+                generate_statement(buf, nodes, stmt_node->data.binary.right_idx, symbols, string_pool);
+            }
             break;
             
         case NODE_OUTPUT:
             generate_output(buf, nodes, stmt_idx, symbols, string_pool);
             break;
             
-        case NODE_ACTION_BLOCK:
-            // Generate code for each action in the block
-            {
-                uint16_t action = node->data.binary.left_idx;
-                while (action != 0 && action < 4096) {
-                    generate_statement(buf, nodes, action, symbols, string_pool);
-                    action = nodes[action].data.binary.right_idx;
-                }
+        case NODE_BINARY_OP:
+            // Handle variable definitions and assignments
+            if (stmt_node->data.binary.op == TOK_EQUALS) {
+                generate_var_def(buf, nodes, stmt_idx, symbols, string_pool);
+            } else {
+                // Treat as expression
+                generate_expression(buf, nodes, stmt_idx, symbols, string_pool);
             }
             break;
             
+        case NODE_VAR_DEF:
+            generate_var_def(buf, nodes, stmt_idx, symbols, string_pool);
+            break;
+            
         case NODE_FUNC_DEF:
-            // Emit a jump over the function definition
-            emit_byte(buf, 0xE9); // JMP rel32
-            uint32_t jump_pos = buf->position;
-            emit_dword(buf, 0); // Placeholder
-            
-            uint32_t func_start = buf->position;
             generate_func_def(buf, nodes, stmt_idx, symbols, string_pool);
-            uint32_t func_end = buf->position;
-            
-            // Patch the jump to skip over the function
-            int32_t jump_offset = func_end - (jump_pos + 4);
-            *(int32_t*)&buf->code[jump_pos] = jump_offset;
             break;
             
         case NODE_FUNC_CALL:
@@ -1522,43 +1498,38 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
             generate_conditional(buf, nodes, stmt_idx, symbols, string_pool);
             break;
             
-        case NODE_DECLARE_BLOCK:
-            // Declare blocks contain function definitions that should be handled
-            // during the declare pass in main, not during regular statement generation
-            // So we skip them here to avoid duplicate generation
+        case NODE_ACTION_BLOCK:
+            // Handle action block - process left_idx (first statement)
+            if (stmt_node->data.binary.left_idx != 0) {
+                generate_statement(buf, nodes, stmt_node->data.binary.left_idx, symbols, string_pool);
+            }
+            // Process right_idx (next statement in chain)
+            if (stmt_node->data.binary.right_idx != 0) {
+                generate_statement(buf, nodes, stmt_node->data.binary.right_idx, symbols, string_pool);
+            }
             break;
             
-        case NODE_RETURN: {
-            print_str("[RETURN] WARNING: Found unexpected NODE_RETURN at idx=");
-            print_num(stmt_idx);
-            print_str(" - skipping since parser doesn't support return statements\n");
-            
-            // Since the parser doesn't intentionally create NODE_RETURN nodes,
-            // this is likely a memory corruption or uninitialized node issue.
-            // Skip processing this node to avoid segfault.
-            // Add additional safety check to prevent any data access
-            print_str("[RETURN] Node data structure appears corrupted - skipping safely\n");
+        case NODE_IDENTIFIER:
+            // Handle identifier as expression
+            generate_expression(buf, nodes, stmt_idx, symbols, string_pool);
             break;
-        }
+            
+        case NODE_NUMBER:
+        case NODE_FLOAT:
+            // Handle literal as expression
+            generate_expression(buf, nodes, stmt_idx, symbols, string_pool);
+            break;
             
         default:
-            // Skip other node types for now
+            print_str("CODEGEN_ERROR: Unsupported statement type ");
+            print_num(stmt_node->type);
+            print_str(" at index ");
+            print_num(stmt_idx);
+            print_str("\n");
             break;
     }
     
-    print_str("[STMT] Completed processing node ");
-    print_num(stmt_idx);
-    print_str(" at depth ");
-    print_num(recursion_depth);
-    print_str("\n");
-    
-    // Clean up recursion tracking
-    recursion_depth--;
-    
-    // Remove from visited list (for this recursion level)
-    if (visited_count > 0) {
-        visited_count--;
-    }
+    codegen_stats.statements_generated++;
 }
 
 // Generate code for conditional statements (if/else, while, etc.)

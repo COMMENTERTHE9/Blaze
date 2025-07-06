@@ -409,6 +409,9 @@ typedef enum {
     NODE_RETURN
 } NodeType;
 
+// Define the maximum node type value
+#define NODE_TYPE_MAX (NODE_RETURN + 1)
+
 // AST Node - compact representation
 typedef struct ASTNode {
     NodeType type;
@@ -772,5 +775,7 @@ void debug_print_tokens(Token* tokens, uint32_t count, const char* source);
 // Variable type checking functions
 bool is_var_float(const char* name);
 bool is_var_solid(const char* name);
+
+void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx, SymbolTable* symbols, char* string_pool);
 
 #endif // BLAZE_INTERNALS_H
