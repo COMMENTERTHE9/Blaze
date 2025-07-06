@@ -63,14 +63,20 @@ static bool match_string(const char* input, uint32_t pos, uint32_t len, const ch
     return true;
 }
 
-// Parse variable declaration: var.v-name-[value] or constant: var.c-name-[value]
+// Parse variable declaration: var.v-name-[value], constant: var.c-name-[value], or solid: var.d-name-[value]
 static uint32_t parse_var_decl(const char* input, uint32_t pos, uint32_t len, Token* tok) {
     bool is_const = false;
+    bool is_solid = false;
     
     if (match_string(input, pos, len, "var.v-")) {
         is_const = false;
+        is_solid = false;
     } else if (match_string(input, pos, len, "var.c-")) {
         is_const = true;
+        is_solid = false;
+    } else if (match_string(input, pos, len, "var.d-")) {
+        is_const = false;
+        is_solid = true;
     } else {
         return 0;
     }
@@ -88,14 +94,22 @@ static uint32_t parse_var_decl(const char* input, uint32_t pos, uint32_t len, To
     
     // Check if there's an initialization
     if (pos < len && input[pos] == '-' && pos + 1 < len && input[pos + 1] == '[') {
-        // This is var.v-name-[value] or var.c-name-[value] pattern
+        // This is var.v-name-[value], var.c-name-[value], or var.d-name-[value] pattern
         pos++; // Skip '-'
-        tok->type = is_const ? TOK_CONST : TOK_VAR;
+        if (is_solid) {
+            tok->type = TOK_VAR_SOLID;
+        } else {
+            tok->type = is_const ? TOK_CONST : TOK_VAR;
+        }
         tok->len = pos - start;
         return pos;
     } else if (pos > name_start) {
-        // Just var.v-name or var.c-name
-        tok->type = is_const ? TOK_CONST : TOK_VAR;
+        // Just var.v-name, var.c-name, or var.d-name
+        if (is_solid) {
+            tok->type = TOK_VAR_SOLID;
+        } else {
+            tok->type = is_const ? TOK_CONST : TOK_VAR;
+        }
         tok->len = pos - start;
         return pos;
     }
@@ -700,6 +714,34 @@ static uint32_t parse_function_call(const char* input, uint32_t pos, uint32_t le
     return pos;
 }
 
+// Parse string literal enclosed in double quotes
+static uint32_t parse_string_literal(const char* input, uint32_t pos, uint32_t len, Token* tok) {
+    if (pos >= len || input[pos] != '"') return 0;
+    
+    uint32_t start = pos;
+    pos++; // Skip opening quote
+    
+    // Find closing quote
+    while (pos < len && input[pos] != '"') {
+        if (input[pos] == '\\' && pos + 1 < len) {
+            pos += 2; // Skip escaped character
+        } else {
+            pos++;
+        }
+    }
+    
+    if (pos >= len) {
+        // Unterminated string
+        return 0;
+    }
+    
+    pos++; // Skip closing quote
+    
+    tok->type = TOK_STRING;
+    tok->len = pos - start;
+    return pos;
+}
+
 // Main lexer function
 uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
     print_str("[LEXER] ENTERED lex_blaze\n");
@@ -840,6 +882,13 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
         
         // Try number
         if ((next_pos = parse_number(input, pos, len, tok)) != 0) {
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try string literal
+        if ((next_pos = parse_string_literal(input, pos, len, tok)) != 0) {
             pos = next_pos;
             token_count++;
             continue;

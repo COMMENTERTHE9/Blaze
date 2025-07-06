@@ -270,9 +270,16 @@ void emit_function_prologue(CodeBuffer* buf) {
 }
 
 void emit_function_epilogue(CodeBuffer* buf) {
+    if (!buf || !buf->code) {
+        print_str("[EPILOGUE] ERROR: Invalid buffer\n");
+        return;
+    }
+    
+    print_str("[EPILOGUE] Emitting function epilogue\n");
     emit_mov_reg_reg(buf, RSP, RBP);
     emit_pop_reg(buf, RBP);
     emit_byte(buf, 0xC3); // RET
+    print_str("[EPILOGUE] Function epilogue complete\n");
 }
 
 // Time-travel specific: save/restore temporal state
@@ -317,6 +324,23 @@ void emit_future_conditional(CodeBuffer* buf, TokenType cond_op, X64Register val
         case TOK_NOT_EQUAL:
             emit_cmp_reg_imm32(buf, value_reg, 0);
             emit_jne_rel32(buf, 0); // Placeholder offset
+            break;
+            
+        case TOK_LT_CMP:
+        case TOK_GT_CMP:
+        case TOK_LE:
+        case TOK_GE:
+        case TOK_EQ:
+        case TOK_NE:
+            // These are handled by the same logic as above
+            emit_cmp_reg_imm32(buf, value_reg, 0);
+            emit_je_rel32(buf, 0); // Placeholder offset
+            break;
+            
+        default:
+            // Default to equality comparison
+            emit_cmp_reg_imm32(buf, value_reg, 0);
+            emit_je_rel32(buf, 0); // Placeholder offset
             break;
     }
     
