@@ -1,0 +1,229 @@
+# GGGX Fine-Grained Control - Every Computational Step Exposed
+# This demonstrates how Blaze exposes every GGGX phase and sub-step to the user
+
+# Initialize GGGX engine
+gggx.init/
+
+# Test 1: Individual Phase Execution
+print/ "=== Individual Phase Execution ===" \
+
+# Execute GO phase only
+var.v-go_result-[gggx.go/ 3.14159, 100 /]
+print/ "GO Phase Result: " go_result.significant_digits " significant digits" \
+print/ "Pattern detected: " go_result.has_pattern \
+
+# Execute GET phase only
+var.v-get_result-[gggx.get/ 3.14159, 100 /]
+print/ "GET Phase Result: " get_result.trace.instruction_count " instructions" \
+print/ "Complexity: O(" get_result.algorithm_complexity ")" \
+
+# Execute GAP phase only
+var.v-gap_result-[gggx.gap/ 3.14159, 100 /]
+print/ "GAP Phase Result: achievable precision " gap_result.achievable_precision \
+print/ "Confidence: " gap_result.precision_confidence \
+
+# Execute GLIMPSE phase only
+var.v-glimpse_result-[gggx.glimpse/ 3.14159, 100 /]
+print/ "GLIMPSE Phase Result: barrier " glimpse_result.barrier.detected_barrier \
+print/ "Terminal pattern: " glimpse_result.has_terminal_pattern \
+
+# Execute GUESS phase only
+var.v-guess_result-[gggx.guess/ 3.14159, 100 /]
+print/ "GUESS Phase Result: " guess_result.explanation \
+
+# Test 2: Fine-Grained Sub-Step Execution
+print/ "\n=== Fine-Grained Sub-Step Execution ===" \
+
+# GO Phase Sub-Steps
+var.v-sig_digits-[gggx.go.analyze_digits/ 3.14159 /]
+print/ "Significant digits analysis: " sig_digits \
+
+var.v-pattern_period-[gggx.go.detect_patterns/ 3.14159 /]
+print/ "Pattern detection: period " pattern_period \
+
+var.v-constant_name-[gggx.go.check_constants/ 3.14159 /]
+print/ "Mathematical constant: " constant_name \
+
+# GET Phase Sub-Steps
+var.v-trace-[gggx.get.generate_trace/ 3.14159, 100 /]
+print/ "Computational trace: " trace.instruction_count " instructions" \
+print/ "Memory accesses: " trace.memory_accesses \
+
+var.v-complexity-[gggx.get.estimate_complexity/ 3.14159, 100 /]
+print/ "Algorithm complexity: O(" complexity ")" \
+
+# GAP Phase Sub-Steps
+var.v-achievable-[gggx.gap.assess_precision/ trace, 100 /]
+print/ "Achievable precision: " achievable \
+
+var.v-confidence-[gggx.gap.calculate_confidence/ achievable, 100, complexity /]
+print/ "Confidence: " confidence \
+
+# GLIMPSE Phase Sub-Steps
+var.v-barrier-[gggx.glimpse.detect_barriers/ trace, 3.14159 /]
+print/ "Detected barrier: " barrier \
+
+var.v-terminals-[gggx.glimpse.analyze_terminals/ 3.14159, barrier, 1000 /]
+print/ "Terminal analysis: pattern " terminals.has_pattern \
+print/ "Pattern length: " terminals.pattern_length \
+
+# GUESS Phase Sub-Steps
+var.v-zone_score-[gggx.guess.classify_zone/ complexity, confidence, barrier /]
+print/ "Zone classification: " zone_score \
+
+# Test 3: User Override Functions
+print/ "\n=== User Override Functions ===" \
+
+# Define custom GO phase
+|my_custom_go_phase| func.can< value, precision< do/
+    print/ "CUSTOM GO PHASE: My specialized analysis for value " value \
+    
+    # Custom significant digit analysis
+    var.v-sig_digits-[gggx.go.analyze_digits/ value /]
+    
+    # Custom pattern detection
+    var.v-period-[gggx.go.detect_patterns/ value /]
+    
+    # Custom mathematical constant detection
+    var.v-constant-[gggx.go.check_constants/ value /]
+    
+    print/ "  CUSTOM: Significant digits " sig_digits \
+    print/ "  CUSTOM: Pattern period " period \
+    print/ "  CUSTOM: Constant " constant \
+:>
+
+# Set custom user override
+gggx.set_go_phase/ my_custom_go_phase \
+
+# Execute with custom override
+var.v-custom_result-[gggx.analyze_with_control/ 2.71828, 50 /]
+print/ "Custom analysis result: " custom_result.explanation \
+
+# Test 4: Phase Control
+print/ "\n=== Phase Control ===" \
+
+# Disable some phases
+gggx.enable.glimpse/ false \
+gggx.enable.guess/ false \
+
+# Execute with limited phases
+var.v-limited_result-[gggx.analyze_with_control/ 1.61803, 25 /]
+print/ "Limited analysis result: " limited_result.explanation \
+
+# Re-enable all phases
+gggx.enable.glimpse/ true \
+gggx.enable.guess/ true \
+
+# Test 5: Status and Debugging
+print/ "\n=== Status and Debugging ===" \
+
+# Check phase completion status
+print/ "GO phase completed: " gggx.status.go/ \
+print/ "GET phase completed: " gggx.status.get/ \
+print/ "GAP phase completed: " gggx.status.gap/ \
+print/ "GLIMPSE phase completed: " gggx.status.glimpse/ \
+print/ "GUESS phase completed: " gggx.status.guess/ \
+
+# Check sub-step completion status
+print/ "Significant digits analyzed: " gggx.status.sub_step/ "significant_digits_analyzed" / \
+print/ "Pattern detection complete: " gggx.status.sub_step/ "pattern_detection_complete" / \
+print/ "Computational trace generated: " gggx.status.sub_step/ "computational_trace_generated" / \
+print/ "Barrier detected: " gggx.status.sub_step/ "barrier_detected" / \
+print/ "Zone classified: " gggx.status.sub_step/ "zone_classified" / \
+
+# Print full status
+gggx.print_status/ \
+
+# Test 6: Composable Operations
+print/ "\n=== Composable Operations ===" \
+
+# Build custom GGGX analysis by composing sub-steps
+|custom_analysis| func.can< value, precision< do/
+    # Step 1: Analyze significant digits
+    var.v-sig_digits-[gggx.go.analyze_digits/ value /]
+    
+    # Step 2: Generate computational trace
+    var.v-trace-[gggx.get.generate_trace/ value, precision /]
+    
+    # Step 3: Assess achievable precision
+    var.v-achievable-[gggx.gap.assess_precision/ trace, precision /]
+    
+    # Step 4: Detect barriers
+    var.v-barrier-[gggx.glimpse.detect_barriers/ trace, value /]
+    
+    # Step 5: Classify zone
+    var.v-zone-[gggx.guess.classify_zone/ trace.complexity, achievable.confidence, barrier /]
+    
+    print/ "Custom analysis: Zone " zone " with " sig_digits " significant digits" \
+    print/ "Barrier: " barrier ", Achievable precision: " achievable \
+:>
+
+# Execute custom analysis
+custom_analysis/ 3.14159, 100 \
+
+# Test 7: Override Individual Sub-Steps
+print/ "\n=== Override Individual Sub-Steps ===" \
+
+# Override specific sub-step
+|my_custom_digit_analysis| func.can< value< do/
+    print/ "CUSTOM: My specialized digit analysis for " value \
+    return/ 42 \  # Always return 42 for testing
+:>
+
+# Set custom sub-step
+gggx.set_sub_step/ "analyze_digits", my_custom_digit_analysis \
+
+# Execute with custom sub-step
+var.v-custom_digits-[gggx.go.analyze_digits/ 3.14159 /]
+print/ "Custom digit analysis result: " custom_digits \
+
+# Test 8: Conditional Phase Execution
+print/ "\n=== Conditional Phase Execution ===" \
+
+# Only run GO phase if value is transcendental
+|is_transcendental| func.can< value< do/
+    return/ value == 3.14159 || value == 2.71828 \
+:>
+
+var.v-value-[3.14159]
+if/ is_transcendental/ value <
+    gggx.enable.go/ true \
+    var.v-go_result-[gggx.go/ value, 100 /]
+    print/ "Transcendental analysis: " go_result.significant_digits " digits" \
+:> else <
+    gggx.enable.go/ false \
+    print/ "Skipping GO phase for non-transcendental value" \
+:>
+
+# Test 9: Iterative Refinement
+print/ "\n=== Iterative Refinement ===" \
+
+# Start with basic analysis
+var.v-basic_result-[gggx.analyze_with_control/ 3.14159, 10 /]
+
+# Refine based on initial results
+if/ basic_result.precision_confidence < 0.8 <
+    print/ "Low confidence, running detailed analysis..." \
+    
+    # Run detailed sub-steps
+    var.v-detailed_trace-[gggx.get.generate_trace/ 3.14159, 100 /]
+    var.v-detailed_barrier-[gggx.glimpse.detect_barriers/ detailed_trace, 3.14159 /]
+    var.v-detailed_zone-[gggx.guess.classify_zone/ detailed_trace.complexity, 0.9, detailed_barrier /]
+    
+    print/ "Detailed analysis: Zone " detailed_zone " with barrier " detailed_barrier \
+:> else <
+    print/ "High confidence, using basic analysis" \
+:>
+
+# Test 10: Parallel Phase Execution
+print/ "\n=== Parallel Phase Execution ===" \
+
+# Run GO and GET phases in parallel (conceptually)
+var.v-go_parallel-[gggx.go/ 3.14159, 100 /]
+var.v-get_parallel-[gggx.get/ 3.14159, 100 /]
+
+# Combine results
+print/ "Parallel GO result: " go_parallel.significant_digits " digits" \
+print/ "Parallel GET result: " get_parallel.trace.instruction_count " instructions" \
+
+print/ "\n=== GGGX Fine-Grained Control Complete ===" \

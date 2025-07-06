@@ -6,6 +6,9 @@
 
 #include "blaze_types.h"
 
+// Forward declaration
+typedef struct ASTNode ASTNode;
+
 // Maximum digits we can store inline (for optimization)
 #define SOLID_INLINE_DIGITS 32
 #define SOLID_MAX_TERMINAL_DIGITS 16

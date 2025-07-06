@@ -395,9 +395,9 @@ void emit_jnz(CodeBuffer* buf, int8_t offset) {
 
 // NEG reg (negate register)
 void emit_neg_reg(CodeBuffer* buf, X64Register reg) {
-    emit_rex(buf, true, false, false, reg >= R8);
+    emit_rex(buf, true, false, false, reg >= 8);
     emit_byte(buf, 0xF7);
-    emit_byte(buf, MODRM(3, 3, reg & 7));
+    emit_byte(buf, 0xD8 | (reg & 7));
 }
 
 // JGE rel32 (jump if greater or equal)
@@ -486,4 +486,24 @@ void emit_print_integer(CodeBuffer* buf) {
     emit_byte(buf, 0x81);
     emit_byte(buf, MODRM(3, 0, RSP));
     emit_dword(buf, 32);
+}
+
+void emit_not_reg(CodeBuffer* buf, X64Register reg) {
+    emit_rex(buf, true, false, false, reg >= 8);
+    emit_byte(buf, 0xF7);
+    emit_byte(buf, 0xD0 | (reg & 7));
+}
+
+void emit_sete(CodeBuffer* buf, X64Register reg) {
+    // SETE r/m8: Set byte if equal (ZF=1)
+    emit_rex(buf, false, false, false, reg >= 8);
+    emit_byte(buf, 0x0F);
+    emit_byte(buf, 0x94);
+    emit_byte(buf, 0xC0 | (reg & 7));
+    
+    // Zero-extend byte to 64-bit
+    emit_rex(buf, true, false, false, reg >= 8);
+    emit_byte(buf, 0x0F);
+    emit_byte(buf, 0xB6);
+    emit_byte(buf, 0xC0 | (reg & 7));
 }

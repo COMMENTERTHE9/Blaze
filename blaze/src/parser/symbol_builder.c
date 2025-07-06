@@ -611,24 +611,43 @@ static void build_symbols_from_node(SymbolBuilder* builder, uint16_t node_idx) {
                     print_num(name_len);
                     print_str(")\n");
                     
-                    // Look up function in symbol table
-                    Symbol* func_sym = symbol_lookup(builder->table, func_name, name_len, false);
-                    if (!func_sym) {
-                        // Check for forward reference (temporal)
-                        func_sym = symbol_lookup(builder->table, func_name, name_len, true);
-                        if (!func_sym) {
-                            print_str("[SYMBOL] WARNING: Function '");
-                            for (uint16_t i = 0; i < name_len && i < 32; i++) {
-                                print_num(func_name[i]);
-                                print_str(" ");
+                    // Check if this is a GGGX function
+                    if (strncmp(func_name, "gggx_", 5) == 0) {
+                        print_str("[SYMBOL] GGGX function detected: ");
+                        for (uint16_t i = 0; i < name_len && i < 32; i++) {
+                            print_num(func_name[i]);
+                            print_str(" ");
+                        }
+                        print_str("\n");
+                        
+                        // Add GGGX function to symbol table if not already present
+                        Symbol* gggx_sym = symbol_lookup(builder->table, func_name, name_len, false);
+                        if (!gggx_sym) {
+                            gggx_sym = symbol_add_function(builder->table, func_name, name_len, node_idx, 0);
+                            if (gggx_sym) {
+                                print_str("[SYMBOL] Added GGGX function to symbol table\n");
                             }
-                            print_str("' not found in symbol table\n");
-                            // Allow forward references for now (time-travel)
-                        } else {
-                            print_str("[SYMBOL] Found function via forward reference\n");
                         }
                     } else {
-                        print_str("[SYMBOL] Found function in symbol table\n");
+                        // Look up regular function in symbol table
+                        Symbol* func_sym = symbol_lookup(builder->table, func_name, name_len, false);
+                        if (!func_sym) {
+                            // Check for forward reference (temporal)
+                            func_sym = symbol_lookup(builder->table, func_name, name_len, true);
+                            if (!func_sym) {
+                                print_str("[SYMBOL] WARNING: Function '");
+                                for (uint16_t i = 0; i < name_len && i < 32; i++) {
+                                    print_num(func_name[i]);
+                                    print_str(" ");
+                                }
+                                print_str("' not found in symbol table\n");
+                                // Allow forward references for now (time-travel)
+                            } else {
+                                print_str("[SYMBOL] Found function via forward reference\n");
+                            }
+                        } else {
+                            print_str("[SYMBOL] Found function in symbol table\n");
+                        }
                     }
                 }
             }

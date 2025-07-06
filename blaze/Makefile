@@ -6,7 +6,7 @@ CC = gcc
 CFLAGS = -O3 -Wall -Wextra -fno-stack-protector -Iinclude -Isrc
 # For -O1 optimized builds (now working):
 # CFLAGS = -O1 -mcmodel=large -fno-section-anchors -fno-pic -Wall -Wextra -fno-stack-protector -Iinclude
-LDFLAGS = -nostdlib -static
+LDFLAGS = -lm
 
 # NOTE: Optimization status:
 # -O0: Fully working (debug builds)
@@ -43,7 +43,9 @@ SRCS = src/blaze_compiler_main_clean.c \
        src/runtime/memory_manager.c \
        src/runtime/temporal_gc.c \
        src/runtime/blaze_stdlib.c \
-       src/runtime/blaze_start.c
+       src/runtime/blaze_start.c \
+       src/gggx.c \
+       src/gggx_integration.c
 
 OBJS = $(SRCS:.c=.o)
 
@@ -51,7 +53,7 @@ OBJS = $(SRCS:.c=.o)
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(LDFLAGS) -o $(TARGET) $(OBJS)
+	$(CC) -o $(TARGET) $(OBJS) $(LDFLAGS)
 #	strip -s $(TARGET)
 
 %.o: %.c include/blaze_internals.h include/blaze_types.h include/symbol_table_types.h include/scalable_codegen.h
@@ -103,4 +105,14 @@ test: $(TARGET)
 	@./test_basic_out
 	@echo "Test 1: Basic print completed."
 
-.PHONY: all clean run debug test
+# GGGX test target
+gggx_test: test_gggx_simple.c
+	$(CC) -O0 -g -o test_gggx_simple test_gggx_simple.c -lm
+	./test_gggx_simple
+
+# GGGX fine-grained control test
+gggx_fine_test: test_gggx_fine_grained.c
+	$(CC) -O0 -g -Iinclude -o test_gggx_fine_grained test_gggx_fine_grained.c src/gggx.c src/gggx_integration.c -lm
+	./test_gggx_fine_grained
+
+.PHONY: all clean run debug test gggx_test gggx_fine_test

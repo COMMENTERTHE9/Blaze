@@ -9,6 +9,8 @@ extern char __bss_start;
 extern char _end;
 
 // Entry point for Linux x86-64
+// DISABLED: Now using standard library which provides its own _start
+/*
 __attribute__((naked, noreturn, used, optimize("O0"))) void _start(void) {
     __asm__ volatile(
         // Save initial stack pointer
@@ -58,3 +60,4 @@ __attribute__((naked, noreturn, used, optimize("O0"))) void _start(void) {
         ::: "rax", "rcx", "rdx", "rsi", "rdi", "memory", "cc"
     );
 }
+*/

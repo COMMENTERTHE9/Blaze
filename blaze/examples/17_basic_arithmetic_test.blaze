@@ -1,0 +1,11 @@
+var.i-x = 4
+var.i-y = 2
+var.i-z = x + y
+
+print/ "Basic arithmetic test:" \
+print/ "x = " \
+txt/x\
+print/ "y = " \
+txt/y\
+print/ "z = x + y = " \
+txt/z 

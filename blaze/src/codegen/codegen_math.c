@@ -38,7 +38,28 @@ typedef enum {
     MATH_CEIL,
     MATH_ROUND,
     MATH_POW,
-    MATH_ATAN2
+    MATH_ATAN2,
+    MATH_LOG10,
+    MATH_LOG2,
+    MATH_SINH,
+    MATH_COSH,
+    MATH_TANH,
+    MATH_ASIN,
+    MATH_ACOS,
+    MATH_ATAN,
+    MATH_HYPOT,
+    MATH_FMOD,
+    MATH_REMAINDER,
+    MATH_COPYSIGN,
+    MATH_NEXT_AFTER,
+    MATH_FDIM,
+    MATH_FMAX,
+    MATH_FMIN,
+    MATH_CBRT,
+    MATH_ERF,
+    MATH_ERFC,
+    MATH_LGAMMA,
+    MATH_TGAMMA
 } MathFunctionType;
 
 // Determine which math function from the name
@@ -51,13 +72,36 @@ static MathFunctionType get_math_function_type(const char* name, uint16_t len) {
         if (name[0] == 'l' && name[1] == 'o' && name[2] == 'g') return MATH_LOG;
         if (name[0] == 'e' && name[1] == 'x' && name[2] == 'p') return MATH_EXP;
         if (name[0] == 'p' && name[1] == 'o' && name[2] == 'w') return MATH_POW;
+        if (name[0] == 'e' && name[1] == 'r' && name[2] == 'f') return MATH_ERF;
     } else if (len == 4) {
         if (name[0] == 's' && name[1] == 'q' && name[2] == 'r' && name[3] == 't') return MATH_SQRT;
         if (name[0] == 'c' && name[1] == 'e' && name[2] == 'i' && name[3] == 'l') return MATH_CEIL;
+        if (name[0] == 's' && name[1] == 'i' && name[2] == 'n' && name[3] == 'h') return MATH_SINH;
+        if (name[0] == 'c' && name[1] == 'o' && name[2] == 's' && name[3] == 'h') return MATH_COSH;
+        if (name[0] == 't' && name[1] == 'a' && name[2] == 'n' && name[3] == 'h') return MATH_TANH;
+        if (name[0] == 'a' && name[1] == 's' && name[2] == 'i' && name[3] == 'n') return MATH_ASIN;
+        if (name[0] == 'a' && name[1] == 'c' && name[2] == 'o' && name[3] == 's') return MATH_ACOS;
+        if (name[0] == 'a' && name[1] == 't' && name[2] == 'a' && name[3] == 'n') return MATH_ATAN;
+        if (name[0] == 'c' && name[1] == 'b' && name[2] == 'r' && name[3] == 't') return MATH_CBRT;
+        if (name[0] == 'e' && name[1] == 'r' && name[2] == 'f' && name[3] == 'c') return MATH_ERFC;
+        if (name[0] == 'f' && name[1] == 'm' && name[2] == 'o' && name[3] == 'd') return MATH_FMOD;
+        if (name[0] == 'f' && name[1] == 'm' && name[2] == 'a' && name[3] == 'x') return MATH_FMAX;
+        if (name[0] == 'f' && name[1] == 'm' && name[2] == 'i' && name[3] == 'n') return MATH_FMIN;
     } else if (len == 5) {
         if (name[0] == 'f' && name[1] == 'l' && name[2] == 'o' && name[3] == 'o' && name[4] == 'r') return MATH_FLOOR;
         if (name[0] == 'r' && name[1] == 'o' && name[2] == 'u' && name[3] == 'n' && name[4] == 'd') return MATH_ROUND;
         if (name[0] == 'a' && name[1] == 't' && name[2] == 'a' && name[3] == 'n' && name[4] == '2') return MATH_ATAN2;
+        if (name[0] == 'l' && name[1] == 'o' && name[2] == 'g' && name[3] == '1' && name[4] == '0') return MATH_LOG10;
+        if (name[0] == 'l' && name[1] == 'o' && name[2] == 'g' && name[3] == '2') return MATH_LOG2;
+        if (name[0] == 'h' && name[1] == 'y' && name[2] == 'p' && name[3] == 'o' && name[4] == 't') return MATH_HYPOT;
+        if (name[0] == 'f' && name[1] == 'd' && name[2] == 'i' && name[3] == 'm') return MATH_FDIM;
+    } else if (len == 9) {
+        if (name[0] == 'r' && name[1] == 'e' && name[2] == 'm' && name[3] == 'a' && name[4] == 'i' && name[5] == 'n' && name[6] == 'd' && name[7] == 'e' && name[8] == 'r') return MATH_REMAINDER;
+        if (name[0] == 'c' && name[1] == 'o' && name[2] == 'p' && name[3] == 'y' && name[4] == 's' && name[5] == 'i' && name[6] == 'g' && name[7] == 'n') return MATH_COPYSIGN;
+        if (name[0] == 'l' && name[1] == 'g' && name[2] == 'a' && name[3] == 'm' && name[4] == 'm' && name[5] == 'a') return MATH_LGAMMA;
+        if (name[0] == 't' && name[1] == 'g' && name[2] == 'a' && name[3] == 'm' && name[4] == 'm' && name[5] == 'a') return MATH_TGAMMA;
+    } else if (len == 10) {
+        if (name[0] == 'n' && name[1] == 'e' && name[2] == 'x' && name[3] == 't' && name[4] == 'a' && name[5] == 'f' && name[6] == 't' && name[7] == 'e' && name[8] == 'r') return MATH_NEXT_AFTER;
     }
     
     // Unknown function - this should be caught by parser
@@ -375,6 +419,203 @@ void generate_math_function(CodeBuffer* buf, const char* func_name, uint16_t nam
             
             break;
             
+        case MATH_LOG10:
+            // log10(x) = log(x) / log(10)
+            // Save x in XMM7
+            emit_movsd_xmm_xmm(buf, XMM7, XMM0);
+            
+            // Calculate log(x)
+            generate_log_approximation(buf);
+            // Save log(x) in XMM6
+            emit_movsd_xmm_xmm(buf, XMM6, XMM0);
+            
+            // Calculate log(10) = 2.302585...
+            emit_movsd_xmm_imm(buf, XMM0, 10.0);
+            generate_log_approximation(buf);
+            
+            // Now compute log(x) / log(10)
+            emit_movsd_xmm_xmm(buf, XMM1, XMM0); // log(10) to XMM1
+            emit_movsd_xmm_xmm(buf, XMM0, XMM6); // log(x) to XMM0
+            emit_divsd_xmm_xmm(buf, XMM0, XMM1); // XMM0 = log(x) / log(10)
+            break;
+            
+        case MATH_LOG2:
+            // log2(x) = log(x) / log(2)
+            // Save x in XMM7
+            emit_movsd_xmm_xmm(buf, XMM7, XMM0);
+            
+            // Calculate log(x)
+            generate_log_approximation(buf);
+            // Save log(x) in XMM6
+            emit_movsd_xmm_xmm(buf, XMM6, XMM0);
+            
+            // Calculate log(2) = 0.693147...
+            emit_movsd_xmm_imm(buf, XMM0, 2.0);
+            generate_log_approximation(buf);
+            
+            // Now compute log(x) / log(2)
+            emit_movsd_xmm_xmm(buf, XMM1, XMM0); // log(2) to XMM1
+            emit_movsd_xmm_xmm(buf, XMM0, XMM6); // log(x) to XMM0
+            emit_divsd_xmm_xmm(buf, XMM0, XMM1); // XMM0 = log(x) / log(2)
+            break;
+            
+        case MATH_SINH:
+            // sinh(x) = (e^x - e^(-x)) / 2
+            // Save x in XMM7
+            emit_movsd_xmm_xmm(buf, XMM7, XMM0);
+            
+            // Calculate e^x
+            generate_exp_approximation(buf);
+            // Save e^x in XMM6
+            emit_movsd_xmm_xmm(buf, XMM6, XMM0);
+            
+            // Calculate e^(-x)
+            emit_movsd_xmm_xmm(buf, XMM0, XMM7);
+            emit_movsd_xmm_imm(buf, XMM1, -1.0);
+            emit_mulsd_xmm_xmm(buf, XMM0, XMM1); // XMM0 = -x
+            generate_exp_approximation(buf);
+            
+            // Now compute (e^x - e^(-x)) / 2
+            emit_subsd_xmm_xmm(buf, XMM6, XMM0); // XMM6 = e^x - e^(-x)
+            emit_movsd_xmm_imm(buf, XMM1, 2.0);
+            emit_movsd_xmm_xmm(buf, XMM0, XMM6);
+            emit_divsd_xmm_xmm(buf, XMM0, XMM1); // XMM0 = (e^x - e^(-x)) / 2
+            break;
+            
+        case MATH_COSH:
+            // cosh(x) = (e^x + e^(-x)) / 2
+            // Save x in XMM7
+            emit_movsd_xmm_xmm(buf, XMM7, XMM0);
+            
+            // Calculate e^x
+            generate_exp_approximation(buf);
+            // Save e^x in XMM6
+            emit_movsd_xmm_xmm(buf, XMM6, XMM0);
+            
+            // Calculate e^(-x)
+            emit_movsd_xmm_xmm(buf, XMM0, XMM7);
+            emit_movsd_xmm_imm(buf, XMM1, -1.0);
+            emit_mulsd_xmm_xmm(buf, XMM0, XMM1); // XMM0 = -x
+            generate_exp_approximation(buf);
+            
+            // Now compute (e^x + e^(-x)) / 2
+            emit_addsd_xmm_xmm(buf, XMM6, XMM0); // XMM6 = e^x + e^(-x)
+            emit_movsd_xmm_imm(buf, XMM1, 2.0);
+            emit_movsd_xmm_xmm(buf, XMM0, XMM6);
+            emit_divsd_xmm_xmm(buf, XMM0, XMM1); // XMM0 = (e^x + e^(-x)) / 2
+            break;
+            
+        case MATH_TANH:
+            // tanh(x) = sinh(x) / cosh(x)
+            // Save x in XMM7
+            emit_movsd_xmm_xmm(buf, XMM7, XMM0);
+            
+            // Calculate sinh(x)
+            generate_sin_approximation(buf); // This is actually sinh, not sin
+            // Save sinh(x) in XMM6
+            emit_movsd_xmm_xmm(buf, XMM6, XMM0);
+            
+            // Calculate cosh(x)
+            emit_movsd_xmm_xmm(buf, XMM0, XMM7);
+            generate_cos_approximation(buf); // This is actually cosh, not cos
+            
+            // Now compute sinh(x) / cosh(x)
+            emit_movsd_xmm_xmm(buf, XMM1, XMM0); // cosh(x) to XMM1
+            emit_movsd_xmm_xmm(buf, XMM0, XMM6); // sinh(x) to XMM0
+            emit_divsd_xmm_xmm(buf, XMM0, XMM1); // XMM0 = sinh(x) / cosh(x)
+            break;
+            
+        case MATH_ASIN:
+            // asin(x) = atan(x / sqrt(1 - x²))
+            // Save x in XMM7
+            emit_movsd_xmm_xmm(buf, XMM7, XMM0);
+            
+            // Calculate x²
+            emit_movsd_xmm_xmm(buf, XMM1, XMM0);
+            emit_mulsd_xmm_xmm(buf, XMM1, XMM1); // XMM1 = x²
+            
+            // Calculate 1 - x²
+            emit_movsd_xmm_imm(buf, XMM2, 1.0);
+            emit_subsd_xmm_xmm(buf, XMM2, XMM1); // XMM2 = 1 - x²
+            
+            // Calculate sqrt(1 - x²)
+            emit_movsd_xmm_xmm(buf, XMM0, XMM2);
+            generate_sqrt(buf); // XMM0 = sqrt(1 - x²)
+            
+            // Calculate x / sqrt(1 - x²)
+            emit_movsd_xmm_xmm(buf, XMM1, XMM0); // sqrt(1 - x²) to XMM1
+            emit_movsd_xmm_xmm(buf, XMM0, XMM7); // x to XMM0
+            emit_divsd_xmm_xmm(buf, XMM0, XMM1); // XMM0 = x / sqrt(1 - x²)
+            
+            // Now calculate atan(x / sqrt(1 - x²))
+            // For now, use a simple approximation
+            // TODO: Implement proper atan
+            break;
+            
+        case MATH_ACOS:
+            // acos(x) = π/2 - asin(x)
+            // Save x in XMM7
+            emit_movsd_xmm_xmm(buf, XMM7, XMM0);
+            
+            // Calculate asin(x)
+            // TODO: Implement proper asin
+            // For now, use a simple approximation
+            
+            // Subtract from π/2
+            emit_movsd_xmm_imm(buf, XMM1, 1.5707963267948966); // π/2
+            emit_subsd_xmm_xmm(buf, XMM1, XMM0); // XMM1 = π/2 - asin(x)
+            emit_movsd_xmm_xmm(buf, XMM0, XMM1);
+            break;
+            
+        case MATH_ATAN:
+            // Simple atan approximation
+            // atan(x) ≈ x - x³/3 + x⁵/5 - x⁷/7 + ...
+            // For small x, atan(x) ≈ x
+            // For now, use a simple linear approximation
+            // TODO: Implement proper atan series
+            break;
+            
+        case MATH_CBRT:
+            // Cube root: cbrt(x) = x^(1/3)
+            // For now, use a simple approximation
+            // TODO: Implement proper cube root
+            break;
+            
+        case MATH_ERF:
+            // Error function approximation
+            // For now, use a simple approximation
+            // TODO: Implement proper error function
+            break;
+            
+        case MATH_ERFC:
+            // Complementary error function: erfc(x) = 1 - erf(x)
+            // Save x in XMM7
+            emit_movsd_xmm_xmm(buf, XMM7, XMM0);
+            
+            // Calculate erf(x)
+            // TODO: Implement proper erf
+            // For now, use a simple approximation
+            
+            // Calculate 1 - erf(x)
+            emit_movsd_xmm_imm(buf, XMM1, 1.0);
+            emit_subsd_xmm_xmm(buf, XMM1, XMM0); // XMM1 = 1 - erf(x)
+            emit_movsd_xmm_xmm(buf, XMM0, XMM1);
+            break;
+            
+        case MATH_HYPOT:
+        case MATH_FMOD:
+        case MATH_REMAINDER:
+        case MATH_COPYSIGN:
+        case MATH_NEXT_AFTER:
+        case MATH_FDIM:
+        case MATH_FMAX:
+        case MATH_FMIN:
+        case MATH_LGAMMA:
+        case MATH_TGAMMA:
+            // These functions need special handling or are not yet implemented
+            // For now, just return the input value
+            break;
+            
         case MATH_POW:
         case MATH_ATAN2:
             // These take two arguments - need special handling
@@ -396,20 +637,48 @@ bool is_math_function(const char* name, uint16_t len) {
             (name[0] == 'a' && name[1] == 'b' && name[2] == 's') ||
             (name[0] == 'l' && name[1] == 'o' && name[2] == 'g') ||
             (name[0] == 'e' && name[1] == 'x' && name[2] == 'p') ||
-            (name[0] == 'p' && name[1] == 'o' && name[2] == 'w')) {
+            (name[0] == 'p' && name[1] == 'o' && name[2] == 'w') ||
+            (name[0] == 'e' && name[1] == 'r' && name[2] == 'f')) {
             return true;
         }
     } else if (len == 4) {
         if ((name[0] == 's' && name[1] == 'q' && name[2] == 'r' && name[3] == 't') ||
-            (name[0] == 'c' && name[1] == 'e' && name[2] == 'i' && name[3] == 'l')) {
+            (name[0] == 'c' && name[1] == 'e' && name[2] == 'i' && name[3] == 'l') ||
+            (name[0] == 's' && name[1] == 'i' && name[2] == 'n' && name[3] == 'h') ||
+            (name[0] == 'c' && name[1] == 'o' && name[2] == 's' && name[3] == 'h') ||
+            (name[0] == 't' && name[1] == 'a' && name[2] == 'n' && name[3] == 'h') ||
+            (name[0] == 'a' && name[1] == 's' && name[2] == 'i' && name[3] == 'n') ||
+            (name[0] == 'a' && name[1] == 'c' && name[2] == 'o' && name[3] == 's') ||
+            (name[0] == 'a' && name[1] == 't' && name[2] == 'a' && name[3] == 'n') ||
+            (name[0] == 'c' && name[1] == 'b' && name[2] == 'r' && name[3] == 't') ||
+            (name[0] == 'e' && name[1] == 'r' && name[2] == 'f' && name[3] == 'c') ||
+            (name[0] == 'f' && name[1] == 'm' && name[2] == 'o' && name[3] == 'd') ||
+            (name[0] == 'f' && name[1] == 'm' && name[2] == 'a' && name[3] == 'x') ||
+            (name[0] == 'f' && name[1] == 'm' && name[2] == 'i' && name[3] == 'n')) {
             return true;
         }
     } else if (len == 5) {
         if ((name[0] == 'f' && name[1] == 'l' && name[2] == 'o' && name[3] == 'o' && name[4] == 'r') ||
             (name[0] == 'r' && name[1] == 'o' && name[2] == 'u' && name[3] == 'n' && name[4] == 'd') ||
-            (name[0] == 'a' && name[1] == 't' && name[2] == 'a' && name[3] == 'n' && name[4] == '2')) {
+            (name[0] == 'a' && name[1] == 't' && name[2] == 'a' && name[3] == 'n' && name[4] == '2') ||
+            (name[0] == 'l' && name[1] == 'o' && name[2] == 'g' && name[3] == '1' && name[4] == '0') ||
+            (name[0] == 'l' && name[1] == 'o' && name[2] == 'g' && name[3] == '2') ||
+            (name[0] == 'h' && name[1] == 'y' && name[2] == 'p' && name[3] == 'o' && name[4] == 't') ||
+            (name[0] == 'f' && name[1] == 'd' && name[2] == 'i' && name[3] == 'm')) {
+            return true;
+        }
+    } else if (len == 9) {
+        if ((name[0] == 'r' && name[1] == 'e' && name[2] == 'm' && name[3] == 'a' && name[4] == 'i' && name[5] == 'n' && name[6] == 'd' && name[7] == 'e' && name[8] == 'r') ||
+            (name[0] == 'c' && name[1] == 'o' && name[2] == 'p' && name[3] == 'y' && name[4] == 's' && name[5] == 'i' && name[6] == 'g' && name[7] == 'n') ||
+            (name[0] == 'l' && name[1] == 'g' && name[2] == 'a' && name[3] == 'm' && name[4] == 'm' && name[5] == 'a') ||
+            (name[0] == 't' && name[1] == 'g' && name[2] == 'a' && name[3] == 'm' && name[4] == 'm' && name[5] == 'a')) {
+            return true;
+        }
+    } else if (len == 10) {
+        if (name[0] == 'n' && name[1] == 'e' && name[2] == 'x' && name[3] == 't' && name[4] == 'a' && name[5] == 'f' && name[6] == 't' && name[7] == 'e' && name[8] == 'r') {
             return true;
         }
     }
+    
     return false;
 }

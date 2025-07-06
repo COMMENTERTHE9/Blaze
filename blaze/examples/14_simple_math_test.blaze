@@ -1,0 +1,23 @@
+# Simple Math Test
+
+var.i-x = 4
+var.i-y = 2
+
+print/ \"Simple Math Test\\n\"\\
+
+print/ \"sqrt(4) = \"\\
+var.i-sqrt_result = sqrt(x)\\
+txt/sqrt_result\\
+print/ \"\\n\"\\
+
+print/ \"log(10) = \"\\
+var.i-log_result = log(10)\\
+txt/log_result\\
+print/ \"\\n\"\\
+
+print/ \"exp(1) = \"\\
+var.i-exp_result = exp(1)\\
+txt/exp_result\\
+print/ \"\\n\"\\
+
+print/ \"Test completed!\\n\"\\ 

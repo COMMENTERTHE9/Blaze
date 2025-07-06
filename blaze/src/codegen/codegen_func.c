@@ -2,6 +2,11 @@
 // Handles |name| entry.can< :> function definitions and ^name/ calls
 
 #include "blaze_internals.h"
+#include "codegen_wrapper.h"
+
+// Forward declarations
+extern void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
+                              SymbolTable* symbols, char* string_pool);
 
 // Function symbol table entry
 typedef struct {
@@ -53,8 +58,152 @@ static FunctionEntry* get_or_create_function(const char* name) {
         entry->is_defined = false;
         return entry;
     }
-    
     return NULL;
+}
+
+// Generate GGGX function calls
+void generate_gggx_function(CodeBuffer* buf, const char* func_name, uint16_t name_len,
+                           ASTNode* nodes, uint16_t arg_idx, SymbolTable* symbols, char* string_pool) {
+    print_str("[CODEGEN] Generating GGGX function: ");
+    for (uint16_t i = 0; i < name_len && i < 32; i++) {
+        print_num(func_name[i]);
+        print_str(" ");
+    }
+    print_str("\n");
+    
+    // Generate arguments first (if any)
+    if (arg_idx > 0 && arg_idx < 4096) {
+        ASTNode* arg_node = &nodes[arg_idx];
+        
+        if (arg_node->type == NODE_BINARY_OP && arg_node->data.binary.op == TOK_COMMA) {
+            // Multiple arguments (value, precision)
+            uint16_t value_arg = arg_node->data.binary.left_idx;
+            uint16_t precision_arg = arg_node->data.binary.right_idx;
+            
+            // Generate value argument
+            if (value_arg > 0 && value_arg < 4096) {
+                generate_expression(buf, nodes, value_arg, symbols, string_pool);
+            }
+            
+            // Generate precision argument
+            if (precision_arg > 0 && precision_arg < 4096) {
+                generate_expression(buf, nodes, precision_arg, symbols, string_pool);
+            }
+        } else {
+            // Single argument
+            generate_expression(buf, nodes, arg_idx, symbols, string_pool);
+        }
+    }
+    
+    // Generate function call based on GGGX function name
+    if (strncmp(func_name, "gggx_init", 9) == 0) {
+        // Call gggx_init_engine()
+        emit_byte(buf, 0xE8); // CALL instruction
+        // For now, just emit a placeholder - in real implementation, this would call the C function
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        print_str("[CODEGEN] Generated gggx_init call\n");
+        
+    } else if (strncmp(func_name, "gggx_go", 7) == 0) {
+        // Call gggx_go_phase_execute(value, precision)
+        emit_byte(buf, 0xE8); // CALL instruction
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        print_str("[CODEGEN] Generated gggx_go call\n");
+        
+    } else if (strncmp(func_name, "gggx_get", 8) == 0) {
+        // Call gggx_get_phase_execute(value, precision)
+        emit_byte(buf, 0xE8); // CALL instruction
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        print_str("[CODEGEN] Generated gggx_get call\n");
+        
+    } else if (strncmp(func_name, "gggx_gap", 8) == 0) {
+        // Call gggx_gap_phase_execute(value, precision)
+        emit_byte(buf, 0xE8); // CALL instruction
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        print_str("[CODEGEN] Generated gggx_gap call\n");
+        
+    } else if (strncmp(func_name, "gggx_glimpse", 12) == 0) {
+        // Call gggx_glimpse_phase_execute(value, precision)
+        emit_byte(buf, 0xE8); // CALL instruction
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        print_str("[CODEGEN] Generated gggx_glimpse call\n");
+        
+    } else if (strncmp(func_name, "gggx_guess", 10) == 0) {
+        // Call gggx_guess_phase_execute(value, precision)
+        emit_byte(buf, 0xE8); // CALL instruction
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        print_str("[CODEGEN] Generated gggx_guess call\n");
+        
+    } else if (strncmp(func_name, "gggx_analyze_with_control", 24) == 0) {
+        // Call gggx_analyze_with_control(value, precision)
+        emit_byte(buf, 0xE8); // CALL instruction
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        print_str("[CODEGEN] Generated gggx_analyze_with_control call\n");
+        
+    } else if (strncmp(func_name, "gggx_set", 8) == 0) {
+        // Call gggx_set_go_phase(function_name)
+        emit_byte(buf, 0xE8); // CALL instruction
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        print_str("[CODEGEN] Generated gggx_set call\n");
+        
+    } else if (strncmp(func_name, "gggx_enable", 11) == 0) {
+        // Call gggx_enable_phase(phase, enabled)
+        emit_byte(buf, 0xE8); // CALL instruction
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        print_str("[CODEGEN] Generated gggx_enable call\n");
+        
+    } else if (strncmp(func_name, "gggx_status", 11) == 0) {
+        // Call gggx_status_phase(phase)
+        emit_byte(buf, 0xE8); // CALL instruction
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        print_str("[CODEGEN] Generated gggx_status call\n");
+        
+    } else if (strncmp(func_name, "gggx_print", 10) == 0) {
+        // Call gggx_print_status()
+        emit_byte(buf, 0xE8); // CALL instruction
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        emit_byte(buf, 0x00);
+        print_str("[CODEGEN] Generated gggx_print call\n");
+        
+    } else {
+        print_str("[CODEGEN] WARNING: Unknown GGGX function: ");
+        for (uint16_t i = 0; i < name_len && i < 32; i++) {
+            print_num(func_name[i]);
+            print_str(" ");
+        }
+        print_str("\n");
+    }
 }
 
 // Forward declaration for statement generation
@@ -240,6 +389,21 @@ void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_idx,
         // The argument is in right_idx
         uint16_t arg_idx = call_node->data.binary.right_idx;
         generate_math_function(buf, func_name, name_len, nodes, arg_idx, symbols, string_pool);
+        return;
+    }
+    
+    // Check if this is a GGGX function
+    if (strncmp(func_name, "gggx_", 5) == 0) {
+        print_str("[CODEGEN] GGGX function call: ");
+        for (uint16_t i = 0; i < name_len && i < 32; i++) {
+            print_num(func_name[i]);
+            print_str(" ");
+        }
+        print_str("\n");
+        
+        // Handle GGGX functions specially
+        uint16_t arg_idx = call_node->data.binary.right_idx;
+        generate_gggx_function(buf, func_name, name_len, nodes, arg_idx, symbols, string_pool);
         return;
     }
     

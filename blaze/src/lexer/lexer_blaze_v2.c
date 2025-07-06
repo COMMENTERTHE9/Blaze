@@ -151,6 +151,53 @@ static uint32_t parse_identifier(const char* input, uint32_t pos, uint32_t len, 
             tok->len = pos + 4 - start; // Include the .can part
             return pos + 4;
         }
+    } else if (word_len == 4 && match_string(input, start, len, "gggx")) {
+        // Check for GGGX commands
+        if (pos + 5 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "init")) {
+            tok->type = TOK_GGGX_INIT;
+            tok->len = pos + 5 - start; // Include the .init part
+            return pos + 5;
+        } else if (pos + 3 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "go")) {
+            tok->type = TOK_GGGX_GO;
+            tok->len = pos + 3 - start; // Include the .go part
+            return pos + 3;
+        } else if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "get")) {
+            tok->type = TOK_GGGX_GET;
+            tok->len = pos + 4 - start; // Include the .get part
+            return pos + 4;
+        } else if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "gap")) {
+            tok->type = TOK_GGGX_GAP;
+            tok->len = pos + 4 - start; // Include the .gap part
+            return pos + 4;
+        } else if (pos + 8 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "glimpse")) {
+            tok->type = TOK_GGGX_GLIMPSE;
+            tok->len = pos + 8 - start; // Include the .glimpse part
+            return pos + 8;
+        } else if (pos + 6 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "guess")) {
+            tok->type = TOK_GGGX_GUESS;
+            tok->len = pos + 6 - start; // Include the .guess part
+            return pos + 6;
+        } else if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "set")) {
+            tok->type = TOK_GGGX_SET;
+            tok->len = pos + 4 - start; // Include the .set part
+            return pos + 4;
+        } else if (pos + 7 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "enable")) {
+            tok->type = TOK_GGGX_ENABLE;
+            tok->len = pos + 7 - start; // Include the .enable part
+            return pos + 7;
+        } else if (pos + 7 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "status")) {
+            tok->type = TOK_GGGX_STATUS;
+            tok->len = pos + 7 - start; // Include the .status part
+            return pos + 7;
+        } else if (pos + 6 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "print")) {
+            tok->type = TOK_GGGX_PRINT;
+            tok->len = pos + 6 - start; // Include the .print part
+            return pos + 6;
+        } else if (pos + 8 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "analyze")) {
+            tok->type = TOK_GGGX_ANALYZE;
+            tok->len = pos + 8 - start; // Include the .analyze part
+            return pos + 8;
+        }
     }
     
     return pos;
@@ -922,7 +969,15 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     token_count++;
                     continue;
                 case '/':
-                    tok->type = TOK_SLASH;
+                    // Check for /=
+                    if (pos + 1 < len && input[pos + 1] == '=') {
+                        tok->type = TOK_DIV_EQUAL;
+                        tok->len = 2;
+                        pos += 2;
+                        token_count++;
+                        continue;
+                    }
+                    tok->type = TOK_DIV;
                     tok->len = 1;
                     pos++;
                     token_count++;
@@ -988,6 +1043,14 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     token_count++;
                     continue;
                 case '%':
+                    // Check for %=
+                    if (pos + 1 < len && input[pos + 1] == '=') {
+                        tok->type = TOK_PERCENT_EQUAL;
+                        tok->len = 2;
+                        pos += 2;
+                        token_count++;
+                        continue;
+                    }
                     tok->type = TOK_PERCENT;
                     tok->len = 1;
                     pos++;
@@ -1029,13 +1092,59 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     pos++;
                     token_count++;
                     continue;
+                case '?':
+                    tok->type = TOK_QUESTION;
+                    tok->len = 1;
+                    pos++;
+                    token_count++;
+                    continue;
                 case '-':
+                    // Check for -- or -=
+                    if (pos + 1 < len) {
+                        if (input[pos + 1] == '-') {
+                            tok->type = TOK_DECREMENT;
+                            tok->len = 2;
+                            pos += 2;
+                            token_count++;
+                            continue;
+                        } else if (input[pos + 1] == '=') {
+                            tok->type = TOK_MINUS_EQUAL;
+                            tok->len = 2;
+                            pos += 2;
+                            token_count++;
+                            continue;
+                        }
+                    }
                     tok->type = TOK_MINUS;
                     tok->len = 1;
                     pos++;
                     token_count++;
                     continue;
                 case '*':
+                    // Check for ** or *=
+                    if (pos + 1 < len) {
+                        if (input[pos + 1] == '*') {
+                            // Check for **= (exponentiation assignment)
+                            if (pos + 2 < len && input[pos + 2] == '=') {
+                                tok->type = TOK_EXPONENT_EQUAL;
+                                tok->len = 3;
+                                pos += 3;
+                                token_count++;
+                                continue;
+                            }
+                            tok->type = TOK_EXPONENT;
+                            tok->len = 2;
+                            pos += 2;
+                            token_count++;
+                            continue;
+                        } else if (input[pos + 1] == '=') {
+                            tok->type = TOK_STAR_EQUAL;
+                            tok->len = 2;
+                            pos += 2;
+                            token_count++;
+                            continue;
+                        }
+                    }
                     tok->type = TOK_STAR;
                     tok->len = 1;
                     pos++;
@@ -1048,6 +1157,22 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     token_count++;
                     continue;
                 case '+':
+                    // Check for ++ or +=
+                    if (pos + 1 < len) {
+                        if (input[pos + 1] == '+') {
+                            tok->type = TOK_INCREMENT;
+                            tok->len = 2;
+                            pos += 2;
+                            token_count++;
+                            continue;
+                        } else if (input[pos + 1] == '=') {
+                            tok->type = TOK_PLUS_EQUAL;
+                            tok->len = 2;
+                            pos += 2;
+                            token_count++;
+                            continue;
+                        }
+                    }
                     tok->type = TOK_PLUS;
                     tok->len = 1;
                     pos++;
@@ -1192,6 +1317,19 @@ void debug_print_tokens(Token* tokens, uint32_t count, const char* source) {
             case TOK_COLON: print_str("COLON"); break;
             case TOK_LBRACE: print_str("LBRACE"); break;
             case TOK_RBRACE: print_str("RBRACE"); break;
+            case TOK_PLUS: print_str("PLUS"); break;
+            case TOK_STAR: print_str("STAR"); break;
+            case TOK_PERCENT: print_str("PERCENT"); break;
+            case TOK_EXPONENT: print_str("EXPONENT"); break;
+            case TOK_PLUS_EQUAL: print_str("PLUS_EQUAL"); break;
+            case TOK_MINUS_EQUAL: print_str("MINUS_EQUAL"); break;
+            case TOK_STAR_EQUAL: print_str("STAR_EQUAL"); break;
+            case TOK_DIV_EQUAL: print_str("DIV_EQUAL"); break;
+            case TOK_PERCENT_EQUAL: print_str("PERCENT_EQUAL"); break;
+            case TOK_EXPONENT_EQUAL: print_str("EXPONENT_EQUAL"); break;
+            case TOK_INCREMENT: print_str("INCREMENT"); break;
+            case TOK_DECREMENT: print_str("DECREMENT"); break;
+            case TOK_QUESTION: print_str("QUESTION"); break;
             case TOK_EOF: print_str("EOF"); break;
             default: 
                 print_str("TOK(");
