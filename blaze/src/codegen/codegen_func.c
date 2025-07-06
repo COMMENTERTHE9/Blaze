@@ -159,53 +159,15 @@ void generate_func_def(CodeBuffer* buf, ASTNode* nodes, uint16_t func_idx,
     // Generate function prologue
     emit_function_prologue(buf);
     
-    // Handle function parameters - they come in registers RDI, RSI, RDX, RCX, R8, R9
-    uint16_t param_count = func_node->data.binary.op;
-    uint16_t current_param = 0;
-    uint16_t param_idx = func_node->data.binary.left_idx; // First parameter
-    
-    X64Register param_regs[] = {RDI, RSI, RDX, RCX, R8, R9};
-    
-    // Store parameters in symbol table for access within function
-    while (param_idx != 0 && current_param < 6 && current_param < param_count) {
-        if (param_idx >= 4096) break;
-        
-        ASTNode* param_node = &nodes[param_idx];
-        if (param_node->type == NODE_IDENTIFIER) {
-            // Parameter has name and value stored in binary structure
-            uint32_t name_offset = param_node->data.binary.left_idx;
-            const char* param_name = &string_pool[name_offset];
-            uint16_t name_len = param_node->data.ident.name_len;
-            
-            // Add parameter to symbol table
-            Symbol* param_sym = symbol_lookup(symbols, param_name, name_len, false);
-            if (param_sym) {
-                // Parameter is already in symbol table, update its storage
-                param_sym->data.var.reg = param_regs[current_param];
-                param_sym->data.var.is_mutable = true;
-                param_sym->storage = STORAGE_REGISTER;
-                
-                print_str("  Function parameter ");
-                print_str(param_name);
-                print_str(" -> register ");
-                print_num(param_regs[current_param]);
-                print_str("\n");
-            } else {
-                // Create new symbol for parameter
-                // This would require symbol table modification - for now just print
-                print_str("  WARNING: Could not find parameter symbol for ");
-                print_str(param_name);
-                print_str("\n");
-            }
-        }
-        
-        // Move to next parameter
-        param_idx = param_node->data.binary.right_idx;
-        current_param++;
-    }
+    // For now, no parameters (functions are simple)
+    print_str("  Function has no parameters\n");
     
     // Get function body from left_idx (as per parser structure)
-    uint16_t body_idx = func_node->data.timing.temporal_offset;
+    uint16_t body_idx = func_node->data.binary.left_idx;
+    print_str("  Function body_idx: ");
+    print_num(body_idx);
+    print_str("\n");
+    
     if (body_idx != 0 && body_idx < 4096) {
         // Process function body
         
@@ -232,6 +194,9 @@ extern void generate_math_function(CodeBuffer* buf, const char* func_name, uint1
 void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_idx,
                        SymbolTable* symbols, char* string_pool) {
     // Function call generation
+    print_str("[CODEGEN] Generating function call at node_idx=");
+    print_num(call_idx);
+    print_str("\n");
     
     if (call_idx == 0 || call_idx >= 4096) {
         print_str("  ERROR: Invalid call index\n");
@@ -260,6 +225,15 @@ void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_idx,
     const char* func_name = &string_pool[name_node->data.ident.name_offset];
     uint16_t name_len = name_node->data.ident.name_len;
     
+    print_str("[CODEGEN] Function call: ");
+    for (uint16_t i = 0; i < name_len && i < 32; i++) {
+        print_num(func_name[i]);
+        print_str(" ");
+    }
+    print_str(" (len=");
+    print_num(name_len);
+    print_str(")\n");
+    
     // Check if this is a math function
     if (is_math_function(func_name, name_len)) {
         // Handle math functions specially
@@ -278,6 +252,8 @@ void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_idx,
         return;
     }
     
+    print_str("[CODEGEN] Found function entry, generating call\n");
+    
     // Save volatile registers per System V ABI
     emit_push_reg(buf, RAX);
     emit_push_reg(buf, RCX);
@@ -294,62 +270,8 @@ void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_idx,
     // Add 8 bytes to make it 88 bytes (divisible by 16)
     emit_sub_reg_imm32(buf, RSP, 8);
     
-    // Handle parameters - System V ABI: RDI, RSI, RDX, RCX, R8, R9
-    uint16_t param_count = call_node->data.binary.op;
-    uint16_t current_param = 0;
-    uint16_t param_idx = call_node->data.binary.right_idx; // First parameter
-    
-    X64Register param_regs[] = {RDI, RSI, RDX, RCX, R8, R9};
-    
-    while (param_idx != 0 && current_param < 6 && current_param < param_count) {
-        if (param_idx >= 4096) break;
-        
-        ASTNode* param_node = &nodes[param_idx];
-        if (param_node->type == NODE_IDENTIFIER) {
-            // Parameter has name and value stored in binary structure
-            uint32_t name_offset = param_node->data.binary.left_idx;
-            uint32_t value_offset = param_node->data.binary.right_idx;
-            
-            const char* param_name = &string_pool[name_offset];
-            const char* param_value = &string_pool[value_offset];
-            
-            // Convert parameter value to number and load into register
-            // For now, assume all parameters are numbers
-            int64_t value = 0;
-            bool is_negative = false;
-            uint32_t i = 0;
-            
-            // Parse the value string
-            if (param_value[0] == '-') {
-                is_negative = true;
-                i = 1;
-            }
-            
-            while (param_value[i] >= '0' && param_value[i] <= '9') {
-                value = value * 10 + (param_value[i] - '0');
-                i++;
-            }
-            
-            if (is_negative) {
-                value = -value;
-            }
-            
-            // Load value into parameter register
-            emit_mov_reg_imm64(buf, param_regs[current_param], value);
-            
-            print_str("  Parameter ");
-            print_str(param_name);
-            print_str(" = ");
-            print_num(value);
-            print_str(" -> ");
-            print_num(param_regs[current_param]);
-            print_str("\n");
-        }
-        
-        // Move to next parameter
-        param_idx = param_node->data.binary.right_idx;
-        current_param++;
-    }
+    // For now, no parameters (functions are simple)
+    print_str("[CODEGEN] No parameters for function call\n");
     
     if (entry->is_defined) {
         // Function is already defined, calculate relative offset
@@ -357,10 +279,16 @@ void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_idx,
         // The offset is calculated from the END of the call instruction
         int32_t offset = entry->code_offset - (buf->position + 5);
         
+        print_str("[CODEGEN] Function is defined, offset=");
+        print_num(offset);
+        print_str("\n");
+        
         emit_byte(buf, 0xE8); // CALL rel32
         emit_dword(buf, offset);
     } else {
         // Forward reference - will fixup later
+        
+        print_str("[CODEGEN] Function is forward reference, creating fixup\n");
         
         // Emit call instruction with placeholder
         emit_byte(buf, 0xE8); // CALL rel32
@@ -389,5 +317,6 @@ void generate_func_call(CodeBuffer* buf, ASTNode* nodes, uint16_t call_idx,
     emit_pop_reg(buf, RCX);
     emit_pop_reg(buf, RAX);
     
+    print_str("[CODEGEN] Function call generation complete\n");
     // Function call complete
 }
