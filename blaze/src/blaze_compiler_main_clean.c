@@ -297,10 +297,6 @@ int main(int argc, char** argv) {
     print_str("[DEBUG] After symbol_table_init\n");
     
     print_str("[DEBUG] Before build_symbol_table\n");
-    build_symbol_table(&symbols, nodes, root_idx, 4096, string_pool);
-    print_str("[DEBUG] After build_symbol_table\n");
-    print_str("[DEBUG] Before codegen\n");
-    
     if (!build_symbol_table(&symbols, nodes, root_idx, 4096, string_pool)) {
         print_str("Error: Symbol table build failed\n");
         return 1;

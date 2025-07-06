@@ -1581,8 +1581,8 @@ static uint16_t parse_var_def(Parser* p) {
                             advance(p);
                         }
                     } else {
-                        p->has_error = true;
-                        return 0;
+                    p->has_error = true;
+                    return 0;
                     }
                 }
             }

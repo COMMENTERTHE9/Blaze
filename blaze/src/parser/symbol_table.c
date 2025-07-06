@@ -118,6 +118,17 @@ Symbol* symbol_add_variable(SymbolTable* table, const char* name, uint16_t name_
     sym->name_len = name_len;
     sym->type = is_temporal ? SYMBOL_TEMPORAL : SYMBOL_VARIABLE;
     
+    // Debug: print what we're adding
+    print_str("[SYMBOL_ADD] Adding variable: name_ptr=");
+    print_num((uint64_t)name);
+    print_str(" pool_ptr=");
+    print_num((uint64_t)table->string_pool);
+    print_str(" calculated_offset=");
+    print_num(sym->name_offset);
+    print_str(" name_len=");
+    print_num(name_len);
+    print_str("\n");
+    
     // Scope info
     sym->scope_level = table->current_scope;
     sym->declaration_line = 0; // Could track line numbers
