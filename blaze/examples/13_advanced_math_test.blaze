@@ -1,0 +1,124 @@
+# Advanced Math Functions Test
+# Testing all the new math functions we added
+
+var.i-x = 2
+var.i-y = 3
+var.i-z = 0.5
+
+print/ \"Advanced Math Functions Test\\n\"\\
+
+# Basic math functions
+print/ \"Basic math functions:\\n\"\\
+print/ \"sqrt(4) = \"\\
+var.i-sqrt_result = sqrt(4)\\
+txt/sqrt_result\\
+print/ \"\\n\"\\
+
+print/ \"log(10) = \"\\
+var.i-log_result = log(10)\\
+txt/log_result\\
+print/ \"\\n\"\\
+
+print/ \"exp(1) = \"\\
+var.i-exp_result = exp(1)\\
+txt/exp_result\\
+print/ \"\\n\"\\
+
+# New logarithm functions
+print/ \"New logarithm functions:\\n\"\\
+print/ \"log10(100) = \"\\
+var.i-log10_result = log10(100)\\
+txt/log10_result\\
+print/ \"\\n\"\\
+
+print/ \"log2(8) = \"\\
+var.i-log2_result = log2(8)\\
+txt/log2_result\\
+print/ \"\\n\"\\
+
+# Trigonometric functions
+print/ \"Trigonometric functions:\\n\"\\
+print/ \"sin(0.5) = \"\\
+var.i-sin_result = sin(z)\\
+txt/sin_result\\
+print/ \"\\n\"\\
+
+print/ \"cos(0.5) = \"\\
+var.i-cos_result = cos(z)\\
+txt/cos_result\\
+print/ \"\\n\"\\
+
+print/ \"tan(0.5) = \"\\
+var.i-tan_result = tan(z)\\
+txt/tan_result\\
+print/ \"\\n\"\\
+
+# Hyperbolic functions
+print/ \"Hyperbolic functions:\\n\"\\
+print/ \"sinh(1) = \"\\
+var.i-sinh_result = sinh(1)\\
+txt/sinh_result\\
+print/ \"\\n\"\\
+
+print/ \"cosh(1) = \"\\
+var.i-cosh_result = cosh(1)\\
+txt/cosh_result\\
+print/ \"\\n\"\\
+
+print/ \"tanh(1) = \"\\
+var.i-tanh_result = tanh(1)\\
+txt/tanh_result\\
+print/ \"\\n\"\\
+
+# Inverse trigonometric functions
+print/ \"Inverse trigonometric functions:\\n\"\\
+print/ \"asin(0.5) = \"\\
+var.i-asin_result = asin(z)\\
+txt/asin_result\\
+print/ \"\\n\"\\
+
+print/ \"acos(0.5) = \"\\
+var.i-acos_result = acos(z)\\
+txt/acos_result\\
+print/ \"\\n\"\\
+
+print/ \"atan(1) = \"\\
+var.i-atan_result = atan(1)\\
+txt/atan_result\\
+print/ \"\\n\"\\
+
+# Rounding functions
+print/ \"Rounding functions:\\n\"\\
+print/ \"floor(3.7) = \"\\
+var.i-floor_result = floor(3.7)\\
+txt/floor_result\\
+print/ \"\\n\"\\
+
+print/ \"ceil(3.2) = \"\\
+var.i-ceil_result = ceil(3.2)\\
+txt/ceil_result\\
+print/ \"\\n\"\\
+
+print/ \"round(3.5) = \"\\
+var.i-round_result = round(3.5)\\
+txt/round_result\\
+print/ \"\\n\"\\
+
+# Special functions
+print/ \"Special functions:\\n\"\\
+print/ \"cbrt(27) = \"\\
+var.i-cbrt_result = cbrt(27)\\
+txt/cbrt_result\\
+print/ \"\\n\"\\
+
+print/ \"erf(1) = \"\\
+var.i-erf_result = erf(1)\\
+txt/erf_result\\
+print/ \"\\n\"\\
+
+print/ \"erfc(1) = \"\\
+var.i-erfc_result = erfc(1)\\
+txt/erfc_result\\
+print/ \"\\n\"\\
+
+print/ \"Test completed!\\n\"\\ 

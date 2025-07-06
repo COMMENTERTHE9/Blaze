@@ -1,0 +1,43 @@
+# Simple Arithmetic Test
+
+var.i-x = 10
+var.i-y = 5
+
+# Basic arithmetic
+print/ "Basic arithmetic test\n"\
+print/ "x = "\
+txt/x\
+print/ ", y = "\
+txt/y\
+print/ "\n"\
+
+# Compound assignment
+x += y
+print/ "x += y: x = "\
+txt/x\
+print/ "\n"\
+
+# Increment
+x++
+print/ "x++: x = "\
+txt/x\
+print/ "\n"\
+
+# Decrement
+y--
+print/ "y--: y = "\
+txt/y\
+print/ "\n"\
+
+# Unary operators
+var.i-neg_x = -x
+print/ "-x = "\
+txt/neg_x\
+print/ "\n"\
+
+var.i-not_x = !x
+print/ "!x = "\
+txt/not_x\
+print/ "\n"\
+
+print/ "Test completed!\n"\ 

@@ -8,7 +8,7 @@
 
 // Forward declarations
 typedef struct ASTNode ASTNode;
-typedef enum NodeType NodeType;
+// NodeType is already defined in blaze_internals.h
 
 // Node pool management
 #define MAX_NODES 4096

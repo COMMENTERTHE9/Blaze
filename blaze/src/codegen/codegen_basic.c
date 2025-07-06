@@ -558,6 +558,51 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
             break;
         }
         
+        case NODE_UNARY_OP: {
+            // Handle unary operators
+            uint16_t expr_idx = expr->data.unary.expr_idx;
+            TokenType op = expr->data.unary.op;
+            
+            print_str("[UNARY] Processing unary op type=");
+            print_num(op);
+            print_str(" expr=");
+            print_num(expr_idx);
+            print_str("\n");
+            
+            // Evaluate the expression first
+            generate_expression(buf, nodes, expr_idx, symbols, string_pool);
+            
+            // Apply unary operator
+            switch (op) {
+                case TOK_BANG: {
+                    // Logical NOT: convert to boolean and negate
+                    // Test if value is zero
+                    emit_test_reg_reg(buf, RAX, RAX);
+                    // Set RAX to 1 if zero, 0 if non-zero
+                    emit_mov_reg_imm64(buf, RAX, 0);
+                    emit_sete(buf, RAX); // Set RAX to 1 if equal (was zero)
+                    break;
+                }
+                
+                case TOK_BIT_NOT: {
+                    // Bitwise NOT: flip all bits
+                    emit_not_reg(buf, RAX);
+                    break;
+                }
+                
+                case TOK_MINUS: {
+                    // Unary minus: negate the value
+                    emit_neg_reg(buf, RAX);
+                    break;
+                }
+                
+                default:
+                    print_str("[UNARY] Unknown unary operator\n");
+                    break;
+            }
+            break;
+        }
+        
         case NODE_BINARY_OP: {
             // Evaluate binary operation
             uint16_t left_idx = expr->data.binary.left_idx;
@@ -823,6 +868,73 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                     // Loop end - result is in RAX
                     break;
                 }
+                
+                // Compound assignment operators
+                case TOK_PLUS_EQUAL:
+                    // Load variable value, add right operand, store back
+                    emit_add_reg_reg(buf, RAX, RDX);
+                    break;
+                    
+                case TOK_MINUS_EQUAL:
+                    emit_sub_reg_reg(buf, RAX, RDX);
+                    break;
+                    
+                case TOK_STAR_EQUAL:
+                    emit_mul_reg(buf, RDX);
+                    break;
+                    
+                case TOK_DIV_EQUAL:
+                    emit_mov_reg_reg(buf, RCX, RDX);
+                    emit_byte(buf, 0x48); // REX.W
+                    emit_byte(buf, 0x99); // CQO
+                    emit_div_reg(buf, RCX);
+                    break;
+                    
+                case TOK_PERCENT_EQUAL:
+                    emit_mov_reg_reg(buf, RCX, RDX);
+                    emit_byte(buf, 0x48); // REX.W
+                    emit_byte(buf, 0x99); // CQO
+                    emit_div_reg(buf, RCX);
+                    emit_mov_reg_reg(buf, RAX, RDX); // Move remainder to RAX
+                    break;
+                    
+                case TOK_EXPONENT_EQUAL: {
+                    // Similar to TOK_EXPONENT but store result back to variable
+                    emit_test_reg_reg(buf, RDX, RDX);
+                    uint32_t zero_exp_jump = buf->position;
+                    emit_jnz(buf, 0);
+                    
+                    emit_mov_reg_imm64(buf, RAX, 1);
+                    uint32_t done_jump = buf->position;
+                    emit_byte(buf, 0xEB);
+                    emit_byte(buf, 0);
+                    
+                    buf->code[zero_exp_jump + 1] = buf->position - zero_exp_jump - 2;
+                    
+                    emit_mov_reg_reg(buf, RCX, RAX);
+                    emit_mov_reg_reg(buf, RBX, RDX);
+                    emit_mov_reg_imm64(buf, RAX, 1);
+                    
+                    uint32_t loop_start = buf->position;
+                    emit_xor_reg_reg(buf, RDX, RDX);
+                    emit_mul_reg(buf, RCX);
+                    emit_dec_reg(buf, RBX);
+                    emit_test_reg_reg(buf, RBX, RBX);
+                    int8_t loop_offset = loop_start - (buf->position + 2);
+                    emit_jnz(buf, loop_offset);
+                    
+                    buf->code[done_jump + 1] = buf->position - done_jump - 2;
+                    break;
+                }
+                    
+                // Increment/decrement operators
+                case TOK_INCREMENT:
+                    emit_inc_reg(buf, RAX);
+                    break;
+                    
+                case TOK_DECREMENT:
+                    emit_dec_reg(buf, RAX);
+                    break;
                     
                 // Comparison operators - set flags and use SETcc
                 case TOK_LT_CMP:
@@ -981,40 +1093,6 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                     emit_mov_reg_imm64(buf, RAX, 0);
                     break;
                 }
-            }
-            break;
-        }
-        
-        case NODE_UNARY_OP: {
-            uint16_t operand_idx = expr->data.unary.expr_idx;
-            TokenType op = expr->data.unary.op;
-            
-            // Generate the expression
-            generate_expression(buf, nodes, operand_idx, symbols, string_pool);
-            
-            // Apply unary operator
-            switch (op) {
-                case TOK_BANG:
-                    // Logical NOT: test if zero
-                    emit_test_reg_reg(buf, RAX, RAX);
-                    emit_byte(buf, 0x0F); // SETZ AL
-                    emit_byte(buf, 0x94);
-                    emit_byte(buf, 0xC0);
-                    emit_byte(buf, 0x0F); // MOVZX RAX, AL
-                    emit_byte(buf, 0xB6);
-                    emit_byte(buf, 0xC0);
-                    break;
-                    
-                case TOK_BIT_NOT:
-                    // Bitwise NOT: invert all bits
-                    emit_byte(buf, 0x48); // NOT RAX
-                    emit_byte(buf, 0xF7);
-                    emit_byte(buf, 0xD0);
-                    break;
-                    
-                default:
-                    // Unsupported unary operator
-                    break;
             }
             break;
         }

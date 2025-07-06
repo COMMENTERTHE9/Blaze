@@ -223,6 +223,19 @@ typedef enum {
     TOK_COND_ASS,        // f.ass or fucn.ass
     TOK_COND_MSR,        // f.msr or fucn.msr
     
+    // GGGX tokens
+    TOK_GGGX_INIT,       // gggx.init
+    TOK_GGGX_GO,         // gggx.go
+    TOK_GGGX_GET,        // gggx.get
+    TOK_GGGX_GAP,        // gggx.gap
+    TOK_GGGX_GLIMPSE,    // gggx.glimpse
+    TOK_GGGX_GUESS,      // gggx.guess
+    TOK_GGGX_ANALYZE,    // gggx.analyze_with_control
+    TOK_GGGX_SET,        // gggx.set_go_phase, etc.
+    TOK_GGGX_ENABLE,     // gggx.enable.go, etc.
+    TOK_GGGX_STATUS,     // gggx.status.go, etc.
+    TOK_GGGX_PRINT,      // gggx.print_status
+    
     // Timeline tokens
     TOK_TIMELINE_DEF,    // timeline-[
     TOK_TIMELINE_JUMP,   // ^timeline.[
@@ -298,6 +311,29 @@ typedef enum {
     
     // Arithmetic operators
     TOK_EXPONENT,        // **
+    
+    // Compound assignment operators
+    TOK_PLUS_EQUAL,      // +=
+    TOK_MINUS_EQUAL,     // -=
+    TOK_STAR_EQUAL,      // *=
+    TOK_DIV_EQUAL,       // /=
+    TOK_PERCENT_EQUAL,   // %=
+    TOK_EXPONENT_EQUAL,  // **=
+    
+    // Bitwise compound assignment
+    TOK_BIT_AND_EQUAL,   // &&.=
+    TOK_BIT_OR_EQUAL,    // ||.=
+    TOK_BIT_XOR_EQUAL,   // ^^=
+    TOK_BIT_LSHIFT_EQUAL, // <<<=
+    TOK_BIT_RSHIFT_EQUAL, // >>>=
+    
+    // Increment/decrement
+    TOK_INCREMENT,       // ++
+    TOK_DECREMENT,       // --
+    
+    // Ternary operator
+    TOK_QUESTION,        // ?
+    TOK_COLON_TERNARY,  // : (for ternary)
     
     // Math function prefix
     TOK_MATH_PREFIX,     // math.
@@ -406,7 +442,9 @@ typedef enum {
     NODE_UNARY_OP,
     NODE_SOLID,
     NODE_BOOL,
-    NODE_RETURN
+    NODE_RETURN,
+    NODE_TERNARY_OP,
+    NODE_COMPOUND_ASSIGN
 } NodeType;
 
 // Define the maximum node type value
@@ -488,6 +526,20 @@ typedef struct ASTNode {
             TokenType op;               // Unary operator (!, ~, etc.)
             uint16_t expr_idx;          // Expression to apply operator to
         } unary;
+        
+        // Ternary operation
+        struct {
+            uint16_t condition_idx;     // Condition expression
+            uint16_t true_expr_idx;     // True branch expression
+            uint16_t false_expr_idx;    // False branch expression
+        } ternary;
+        
+        // Compound assignment
+        struct {
+            TokenType op;               // Compound assignment operator (+=, -=, etc.)
+            uint16_t var_idx;           // Variable being assigned to
+            uint16_t expr_idx;          // Expression to assign
+        } compound_assign;
         
         // Solid number
         struct {
@@ -722,6 +774,8 @@ void emit_test_reg_reg(CodeBuffer* buf, X64Register reg1, X64Register reg2);
 void emit_jz(CodeBuffer* buf, int8_t offset);
 void emit_jnz(CodeBuffer* buf, int8_t offset);
 void emit_neg_reg(CodeBuffer* buf, X64Register reg);
+void emit_not_reg(CodeBuffer* buf, X64Register reg);
+void emit_sete(CodeBuffer* buf, X64Register reg);
 
 // Memory initialization codegen
 void generate_runtime_init(CodeBuffer* buf);

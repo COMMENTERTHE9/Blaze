@@ -69,4 +69,8 @@ bool codegen_finalize(uint8_t** code, uint64_t* size);
 // Clean up scalable context
 void codegen_cleanup(void);
 
+// GGGX function generation
+void generate_gggx_function(CodeBuffer* buf, const char* func_name, uint16_t name_len,
+                           ASTNode* nodes, uint16_t arg_idx, SymbolTable* symbols, char* string_pool);
+
 #endif // CODEGEN_WRAPPER_H

@@ -41,6 +41,7 @@ static uint16_t parse_pipe_func_def(Parser* p);
 static uint16_t parse_action_block(Parser* p);
 static uint16_t parse_solid_number(Parser* p);
 static uint16_t parse_timeline_def(Parser* p);
+static uint16_t parse_gggx_command(Parser* p);
 // Removed parse_declare_block - handled inline now
 
 // Parser utilities
@@ -782,6 +783,30 @@ static uint16_t parse_primary(Parser* p) {
     if (check(p, TOK_IDENTIFIER)) {
         uint16_t id_node = parse_identifier(p);
         
+        // Check for function call: identifier(...)
+        if (check(p, TOK_LPAREN)) {
+            advance(p); // consume (
+            
+            // Parse the argument
+            uint16_t arg = parse_expression(p);
+            
+            // Closing parenthesis
+            if (!match(p, TOK_RPAREN)) {
+                p->has_error = true;
+                return 0;
+            }
+            
+            // Create a function call node
+            uint16_t call_node = alloc_node(p, NODE_FUNC_CALL);
+            if (call_node == 0) return 0;
+            
+            // Store function name in left, argument in right
+            p->nodes[call_node].data.binary.left_idx = id_node;
+            p->nodes[call_node].data.binary.right_idx = arg;
+            
+            return call_node;
+        }
+        
         // Check for array access [x, y, z, t] or [x, y, z, <t]
         if (check(p, TOK_BRACKET_OPEN)) {
             advance(p); // consume [
@@ -898,6 +923,24 @@ static int get_precedence(TokenType type) {
         // Exponentiation has highest precedence
         case TOK_EXPONENT:
             return 7;
+            
+        // Compound assignment operators (same precedence as their base operators)
+        case TOK_PLUS_EQUAL:
+        case TOK_MINUS_EQUAL:
+        case TOK_STAR_EQUAL:
+        case TOK_DIV_EQUAL:
+        case TOK_PERCENT_EQUAL:
+        case TOK_EXPONENT_EQUAL:
+            return 1; // Low precedence for assignment
+            
+        // Increment/decrement (postfix has higher precedence than prefix)
+        case TOK_INCREMENT:
+        case TOK_DECREMENT:
+            return 8; // Higher than exponentiation
+            
+        // Ternary operator
+        case TOK_QUESTION:
+            return 0; // Lowest precedence
             
         // Multiplication and division
         case TOK_STAR:
@@ -1072,6 +1115,24 @@ static uint16_t parse_expression_prec(Parser* p, int min_prec) {
             op_type = TOK_PERCENT;
         } else if (check(p, TOK_EXPONENT)) {
             op_type = TOK_EXPONENT;
+        } else if (check(p, TOK_PLUS_EQUAL)) {
+            op_type = TOK_PLUS_EQUAL;
+        } else if (check(p, TOK_MINUS_EQUAL)) {
+            op_type = TOK_MINUS_EQUAL;
+        } else if (check(p, TOK_STAR_EQUAL)) {
+            op_type = TOK_STAR_EQUAL;
+        } else if (check(p, TOK_DIV_EQUAL)) {
+            op_type = TOK_DIV_EQUAL;
+        } else if (check(p, TOK_PERCENT_EQUAL)) {
+            op_type = TOK_PERCENT_EQUAL;
+        } else if (check(p, TOK_EXPONENT_EQUAL)) {
+            op_type = TOK_EXPONENT_EQUAL;
+        } else if (check(p, TOK_INCREMENT)) {
+            op_type = TOK_INCREMENT;
+        } else if (check(p, TOK_DECREMENT)) {
+            op_type = TOK_DECREMENT;
+        } else if (check(p, TOK_QUESTION)) {
+            op_type = TOK_QUESTION;
         } else if (check(p, TOK_LT_CMP)) {
             op_type = TOK_LT_CMP;
         } else if (check(p, TOK_GT_CMP)) {
@@ -2343,6 +2404,14 @@ static uint16_t parse_statement(Parser* p) {
         return call_node;
     }
     
+    // GGGX commands
+    if (check(p, TOK_GGGX_INIT) || check(p, TOK_GGGX_GO) || check(p, TOK_GGGX_GET) || 
+        check(p, TOK_GGGX_GAP) || check(p, TOK_GGGX_GLIMPSE) || check(p, TOK_GGGX_GUESS) ||
+        check(p, TOK_GGGX_ANALYZE) || check(p, TOK_GGGX_SET) || check(p, TOK_GGGX_ENABLE) ||
+        check(p, TOK_GGGX_STATUS) || check(p, TOK_GGGX_PRINT)) {
+        return parse_gggx_command(p);
+    }
+    
     // Function call: identifier followed by /
     if (check(p, TOK_IDENTIFIER) && peek2(p) && peek2(p)->type == TOK_SLASH) {
         Token* name_tok = advance(p); // consume identifier
@@ -2677,13 +2746,17 @@ static int is_blaze_statement_start(Token* token, const char* source) {
             (token->len == 4 && strncmp(val, "fucn", 4) == 0) ||
             (token->len == 2 && strncmp(val, "do", 2) == 0) ||
             (token->len == 8 && strncmp(val, "timeline", 8) == 0) ||
-            (token->len == 3 && strncmp(val, "gap", 3) == 0)) {
+            (token->len == 3 && strncmp(val, "gap", 3) == 0) ||
+            (token->len == 4 && strncmp(val, "gggx", 4) == 0)) {
             return 1;
         }
     }
     // Special Blaze tokens and output methods
     if (token->type == TOK_PIPE || token->type == TOK_JUMP_MARKER || token->type == TOK_BANG || token->type == TOK_COMMENT ||
-        token->type == TOK_PRINT || token->type == TOK_TXT || token->type == TOK_OUT || token->type == TOK_FMT || token->type == TOK_DYN) {
+        token->type == TOK_PRINT || token->type == TOK_TXT || token->type == TOK_OUT || token->type == TOK_FMT || token->type == TOK_DYN ||
+        token->type == TOK_GGGX_INIT || token->type == TOK_GGGX_GO || token->type == TOK_GGGX_GET || token->type == TOK_GGGX_GAP ||
+        token->type == TOK_GGGX_GLIMPSE || token->type == TOK_GGGX_GUESS || token->type == TOK_GGGX_ANALYZE ||
+        token->type == TOK_GGGX_SET || token->type == TOK_GGGX_ENABLE || token->type == TOK_GGGX_STATUS || token->type == TOK_GGGX_PRINT) {
         return 1;
     }
     return 0;
@@ -2911,4 +2984,253 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
     print_str("\n");
     
     return program_node;
+}
+
+// Parse GGGX commands
+static uint16_t parse_gggx_command(Parser* p) {
+    print_str("[PARSER] Parsing GGGX command\n");
+    
+    // Check for GGGX tokens
+    if (check(p, TOK_GGGX_INIT)) {
+        advance(p); // consume gggx.init
+        if (!match(p, TOK_SLASH)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        // Create GGGX init node
+        uint16_t gggx_node = alloc_node(p, NODE_FUNC_CALL);
+        if (gggx_node == 0) return 0;
+        
+        // Create identifier node for "gggx_init"
+        uint16_t name_node = alloc_node(p, NODE_IDENTIFIER);
+        if (name_node == 0) return 0;
+        
+        // Store "gggx_init" in string pool
+        uint32_t name_offset = p->string_pos;
+        const char* name = "gggx_init";
+        uint32_t name_len = 9;
+        
+        for (uint32_t i = 0; i < name_len; i++) {
+            p->string_pool[p->string_pos++] = name[i];
+        }
+        p->string_pool[p->string_pos++] = '\0';
+        
+        p->nodes[name_node].data.ident.name_offset = name_offset;
+        p->nodes[name_node].data.ident.name_len = name_len;
+        
+        p->nodes[gggx_node].data.binary.left_idx = name_node;
+        p->nodes[gggx_node].data.binary.right_idx = 0; // No arguments
+        
+        return gggx_node;
+    }
+    
+    if (check(p, TOK_GGGX_GO) || check(p, TOK_GGGX_GET) || check(p, TOK_GGGX_GAP) || 
+        check(p, TOK_GGGX_GLIMPSE) || check(p, TOK_GGGX_GUESS)) {
+        
+        TokenType gggx_type = peek(p)->type;
+        advance(p); // consume gggx.phase
+        
+        if (!match(p, TOK_SLASH)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        // Parse arguments (value, precision)
+        uint16_t value_arg = parse_expression(p);
+        if (value_arg == 0) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        if (!match(p, TOK_COMMA)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        uint16_t precision_arg = parse_expression(p);
+        if (precision_arg == 0) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        if (!match(p, TOK_SLASH)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        // Create GGGX phase call node
+        uint16_t gggx_node = alloc_node(p, NODE_FUNC_CALL);
+        if (gggx_node == 0) return 0;
+        
+        // Create identifier node for the phase name
+        uint16_t name_node = alloc_node(p, NODE_IDENTIFIER);
+        if (name_node == 0) return 0;
+        
+        // Store phase name in string pool
+        uint32_t name_offset = p->string_pos;
+        const char* phase_names[] = {"gggx_go", "gggx_get", "gggx_gap", "gggx_glimpse", "gggx_guess"};
+        const char* phase_name = phase_names[gggx_type - TOK_GGGX_GO];
+        uint32_t name_len = strlen(phase_name);
+        
+        for (uint32_t i = 0; i < name_len; i++) {
+            p->string_pool[p->string_pos++] = phase_name[i];
+        }
+        p->string_pool[p->string_pos++] = '\0';
+        
+        p->nodes[name_node].data.ident.name_offset = name_offset;
+        p->nodes[name_node].data.ident.name_len = name_len;
+        
+        // Create argument list node
+        uint16_t args_node = alloc_node(p, NODE_BINARY_OP);
+        if (args_node == 0) return 0;
+        
+        p->nodes[args_node].data.binary.op = TOK_COMMA;
+        p->nodes[args_node].data.binary.left_idx = value_arg;
+        p->nodes[args_node].data.binary.right_idx = precision_arg;
+        
+        p->nodes[gggx_node].data.binary.left_idx = name_node;
+        p->nodes[gggx_node].data.binary.right_idx = args_node;
+        
+        return gggx_node;
+    }
+    
+    if (check(p, TOK_GGGX_ANALYZE)) {
+        advance(p); // consume gggx.analyze
+        
+        if (!match(p, TOK_SLASH)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        // Parse arguments (value, precision)
+        uint16_t value_arg = parse_expression(p);
+        if (value_arg == 0) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        if (!match(p, TOK_COMMA)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        uint16_t precision_arg = parse_expression(p);
+        if (precision_arg == 0) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        if (!match(p, TOK_SLASH)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        // Create GGGX analyze node
+        uint16_t gggx_node = alloc_node(p, NODE_FUNC_CALL);
+        if (gggx_node == 0) return 0;
+        
+        // Create identifier node for "gggx_analyze_with_control"
+        uint16_t name_node = alloc_node(p, NODE_IDENTIFIER);
+        if (name_node == 0) return 0;
+        
+        // Store name in string pool
+        uint32_t name_offset = p->string_pos;
+        const char* name = "gggx_analyze_with_control";
+        uint32_t name_len = 24;
+        
+        for (uint32_t i = 0; i < name_len; i++) {
+            p->string_pool[p->string_pos++] = name[i];
+        }
+        p->string_pool[p->string_pos++] = '\0';
+        
+        p->nodes[name_node].data.ident.name_offset = name_offset;
+        p->nodes[name_node].data.ident.name_len = name_len;
+        
+        // Create argument list node
+        uint16_t args_node = alloc_node(p, NODE_BINARY_OP);
+        if (args_node == 0) return 0;
+        
+        p->nodes[args_node].data.binary.op = TOK_COMMA;
+        p->nodes[args_node].data.binary.left_idx = value_arg;
+        p->nodes[args_node].data.binary.right_idx = precision_arg;
+        
+        p->nodes[gggx_node].data.binary.left_idx = name_node;
+        p->nodes[gggx_node].data.binary.right_idx = args_node;
+        
+        return gggx_node;
+    }
+    
+    if (check(p, TOK_GGGX_SET) || check(p, TOK_GGGX_ENABLE) || check(p, TOK_GGGX_STATUS) || check(p, TOK_GGGX_PRINT)) {
+        TokenType gggx_type = peek(p)->type;
+        advance(p); // consume gggx.command
+        
+        if (!match(p, TOK_SLASH)) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        // Parse arguments based on command type
+        uint16_t arg1 = 0, arg2 = 0;
+        
+        if (gggx_type == TOK_GGGX_SET) {
+            // gggx.set_go_phase/ function_name \
+            arg1 = parse_expression(p);
+            if (arg1 == 0) {
+                p->has_error = true;
+                return 0;
+            }
+        } else if (gggx_type == TOK_GGGX_ENABLE) {
+            // gggx.enable.go/ true |
+            arg1 = parse_expression(p);
+            if (arg1 == 0) {
+                p->has_error = true;
+                return 0;
+            }
+        } else if (gggx_type == TOK_GGGX_STATUS) {
+            // gggx.status.go/ or gggx.status.sub_step/ "name" /
+            arg1 = parse_expression(p);
+            if (arg1 == 0) {
+                p->has_error = true;
+                return 0;
+            }
+        }
+        // TOK_GGGX_PRINT has no arguments
+        
+        if (gggx_type != TOK_GGGX_PRINT) {
+            if (!match(p, TOK_SLASH)) {
+                p->has_error = true;
+                return 0;
+            }
+        }
+        
+        // Create GGGX command node
+        uint16_t gggx_node = alloc_node(p, NODE_FUNC_CALL);
+        if (gggx_node == 0) return 0;
+        
+        // Create identifier node for the command name
+        uint16_t name_node = alloc_node(p, NODE_IDENTIFIER);
+        if (name_node == 0) return 0;
+        
+        // Store command name in string pool
+        uint32_t name_offset = p->string_pos;
+        const char* command_names[] = {"gggx_set", "gggx_enable", "gggx_status", "gggx_print"};
+        const char* command_name = command_names[gggx_type - TOK_GGGX_SET];
+        uint32_t name_len = strlen(command_name);
+        
+        for (uint32_t i = 0; i < name_len; i++) {
+            p->string_pool[p->string_pos++] = command_name[i];
+        }
+        p->string_pool[p->string_pos++] = '\0';
+        
+        p->nodes[name_node].data.ident.name_offset = name_offset;
+        p->nodes[name_node].data.ident.name_len = name_len;
+        
+        p->nodes[gggx_node].data.binary.left_idx = name_node;
+        p->nodes[gggx_node].data.binary.right_idx = arg1;
+        
+        return gggx_node;
+    }
+    
+    return 0;
 }
