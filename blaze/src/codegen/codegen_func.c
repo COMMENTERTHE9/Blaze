@@ -98,104 +98,85 @@ void generate_gggx_function(CodeBuffer* buf, const char* func_name, uint16_t nam
     // Generate function call based on GGGX function name
     if (strncmp(func_name, "gggx_init", 9) == 0) {
         // Call gggx_init_engine()
-        emit_byte(buf, 0xE8); // CALL instruction
-        // For now, just emit a placeholder - in real implementation, this would call the C function
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        print_str("[CODEGEN] Generated gggx_init call\n");
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} // NOPs
+        print_str("[CODEGEN] Stubbed gggx_init (NOP)\n");
         
     } else if (strncmp(func_name, "gggx_go", 7) == 0) {
         // Call gggx_go_phase_execute(value, precision)
-        emit_byte(buf, 0xE8); // CALL instruction
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        print_str("[CODEGEN] Generated gggx_go call\n");
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} print_str("[CODEGEN] Stubbed gggx_go (NOP)\n");
         
     } else if (strncmp(func_name, "gggx_get", 8) == 0) {
         // Call gggx_get_phase_execute(value, precision)
-        emit_byte(buf, 0xE8); // CALL instruction
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        print_str("[CODEGEN] Generated gggx_get call\n");
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} print_str("[CODEGEN] Stubbed gggx_get (NOP)\n");
         
     } else if (strncmp(func_name, "gggx_gap", 8) == 0) {
         // Call gggx_gap_phase_execute(value, precision)
-        emit_byte(buf, 0xE8); // CALL instruction
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        print_str("[CODEGEN] Generated gggx_gap call\n");
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} print_str("[CODEGEN] Stubbed gggx_gap (NOP)\n");
         
     } else if (strncmp(func_name, "gggx_glimpse", 12) == 0) {
         // Call gggx_glimpse_phase_execute(value, precision)
-        emit_byte(buf, 0xE8); // CALL instruction
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        print_str("[CODEGEN] Generated gggx_glimpse call\n");
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} print_str("[CODEGEN] Stubbed gggx_glimpse (NOP)\n");
         
     } else if (strncmp(func_name, "gggx_guess", 10) == 0) {
         // Call gggx_guess_phase_execute(value, precision)
-        emit_byte(buf, 0xE8); // CALL instruction
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        print_str("[CODEGEN] Generated gggx_guess call\n");
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} print_str("[CODEGEN] Stubbed gggx_guess (NOP)\n");
         
     } else if (strncmp(func_name, "gggx_analyze_with_control", 24) == 0) {
         // Call gggx_analyze_with_control(value, precision)
-        emit_byte(buf, 0xE8); // CALL instruction
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        print_str("[CODEGEN] Generated gggx_analyze_with_control call\n");
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} print_str("[CODEGEN] Stubbed gggx_analyze_with_control (NOP)\n");
         
     } else if (strncmp(func_name, "gggx_set", 8) == 0) {
         // Call gggx_set_go_phase(function_name)
-        emit_byte(buf, 0xE8); // CALL instruction
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        print_str("[CODEGEN] Generated gggx_set call\n");
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} print_str("[CODEGEN] Stubbed gggx_set (NOP)\n");
         
     } else if (strncmp(func_name, "gggx_enable", 11) == 0) {
         // Call gggx_enable_phase(phase, enabled)
-        emit_byte(buf, 0xE8); // CALL instruction
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        print_str("[CODEGEN] Generated gggx_enable call\n");
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} print_str("[CODEGEN] Stubbed gggx_enable (NOP)\n");
         
     } else if (strncmp(func_name, "gggx_status", 11) == 0) {
         // Call gggx_status_phase(phase)
-        emit_byte(buf, 0xE8); // CALL instruction
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        print_str("[CODEGEN] Generated gggx_status call\n");
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} print_str("[CODEGEN] Stubbed gggx_status (NOP)\n");
         
     } else if (strncmp(func_name, "gggx_print", 10) == 0) {
         // Call gggx_print_status()
-        emit_byte(buf, 0xE8); // CALL instruction
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        emit_byte(buf, 0x00);
-        print_str("[CODEGEN] Generated gggx_print call\n");
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} print_str("[CODEGEN] Stubbed gggx_print (NOP)\n");
         
+    } else if (strncmp(func_name, "gggx_alloc_trace", 16) == 0) {
+        // Emit five NOPs (placeholder) instead of self-recursive CALL to avoid SIGFPE
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} // NOP NOP NOP NOP NOP
+        print_str("[CODEGEN] Stubbed gggx_alloc_trace (NOP)\n");
+    } else if (strncmp(func_name, "gggx_trace_access", 17) == 0) {
+        // Emit five NOPs (placeholder) instead of self-recursive CALL to avoid SIGFPE
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} // NOPs
+        print_str("[CODEGEN] Stubbed gggx_trace_access (NOP)\n");
+    } else if (strncmp(func_name, "gggx_trace_activate", 19) == 0) {
+        // Emit five NOPs (placeholder) instead of self-recursive CALL to avoid SIGFPE
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} // NOPs
+        print_str("[CODEGEN] Stubbed gggx_trace_activate (NOP)\n");
+    } else if (strncmp(func_name, "gggx_trace_deactivate", 21) == 0) {
+        // Emit five NOPs (placeholder) instead of self-recursive CALL to avoid SIGFPE
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} // NOPs
+        print_str("[CODEGEN] Stubbed gggx_trace_deactivate (NOP)\n");
+    } else if (strncmp(func_name, "gggx_trace_cleanup_old", 22) == 0) {
+        // Emit five NOPs (placeholder) instead of self-recursive CALL to avoid SIGFPE
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} // NOPs
+        print_str("[CODEGEN] Stubbed gggx_trace_cleanup_old (NOP)\n");
+    } else if (strncmp(func_name, "gggx_print_trace_stats", 23) == 0 || strncmp(func_name, "gggx_trace_stats", 17) == 0) {
+        // Emit five NOPs (placeholder) instead of self-recursive CALL to avoid SIGFPE
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} // NOPs
+        print_str("[CODEGEN] Stubbed gggx_trace_stats (NOP)\n");
+    } else if (strncmp(func_name, "gggx_get_trace_id", 17) == 0) {
+        // Emit five NOPs (placeholder) instead of self-recursive CALL to avoid SIGFPE
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} // NOPs
+        print_str("[CODEGEN] Stubbed gggx_get_trace_id (NOP)\n");
+    } else if (strncmp(func_name, "gggx_set_trace_complexity", 25) == 0) {
+        // Emit five NOPs (placeholder) instead of self-recursive CALL to avoid SIGFPE
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} // NOPs
+        print_str("[CODEGEN] Stubbed gggx_set_trace_complexity (NOP)\n");
+    } else if (strncmp(func_name, "gggx_set_trace_confidence", 25) == 0) {
+        // Emit five NOPs (placeholder) instead of self-recursive CALL to avoid SIGFPE
+        for(int i=0;i<5;i++){emit_byte(buf,0x90);} // NOPs
+        print_str("[CODEGEN] Stubbed gggx_set_trace_confidence (NOP)\n");
     } else {
         print_str("[CODEGEN] WARNING: Unknown GGGX function: ");
         for (uint16_t i = 0; i < name_len && i < 32; i++) {

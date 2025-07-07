@@ -42,6 +42,7 @@ static uint16_t parse_action_block(Parser* p);
 static uint16_t parse_solid_number(Parser* p);
 static uint16_t parse_timeline_def(Parser* p);
 static uint16_t parse_gggx_command(Parser* p);
+static uint16_t parse_gggx_generic_command(Parser* p);
 // Removed parse_declare_block - handled inline now
 
 // Parser utilities
@@ -2202,6 +2203,18 @@ static uint16_t parse_statement(Parser* p) {
         return 0xFFFE;  // Special "skip" marker
     }
     
+    // Detect generic GGGX command: identifier "gggx" followed by '.'
+    if (check(p, TOK_IDENTIFIER)) {
+        Token* id_tok = peek(p);
+        if (id_tok && id_tok->len == 4 && strncmp(p->source + id_tok->start, "gggx", 4) == 0) {
+            Token* dot_tok = peek2(p);
+            if (dot_tok && dot_tok->type == TOK_DOT) {
+                print_str("[PARSER] Detected generic GGGX command\n");
+                return parse_gggx_generic_command(p);
+            }
+        }
+    }
+    
     // Variable definition (all types)
     if (check(p, TOK_VAR) || check(p, TOK_VAR_INT) || 
         check(p, TOK_VAR_FLOAT) || check(p, TOK_VAR_STRING) || 
@@ -2992,10 +3005,8 @@ static uint16_t parse_gggx_command(Parser* p) {
     // Check for GGGX tokens
     if (check(p, TOK_GGGX_INIT)) {
         advance(p); // consume gggx.init
-        if (!match(p, TOK_SLASH)) {
-            p->has_error = true;
-            return 0;
-        }
+        // Optional slash after command
+        match(p, TOK_SLASH);
         
         // Create GGGX init node
         uint16_t gggx_node = alloc_node(p, NODE_FUNC_CALL);
@@ -3021,6 +3032,10 @@ static uint16_t parse_gggx_command(Parser* p) {
         p->nodes[gggx_node].data.binary.left_idx = name_node;
         p->nodes[gggx_node].data.binary.right_idx = 0; // No arguments
         
+        // Consume trailing backslash if present
+        if (check(p, TOK_BACKSLASH)) {
+            advance(p);
+        }
         return gggx_node;
     }
     
@@ -3233,3 +3248,92 @@ static uint16_t parse_gggx_command(Parser* p) {
     
     return 0;
 }
+
+// === NEW GENERIC GGGX PARSER ===
+static uint16_t parse_gggx_generic_command(Parser* p) {
+    // Consume 'gggx'
+    Token* gtok = advance(p);
+    (void)gtok; // unused
+    // Expect '.'
+    if (!match(p, TOK_DOT)) {
+        p->has_error = true;
+        return 0;
+    }
+    // Expect command identifier
+    if (!check(p, TOK_IDENTIFIER)) {
+        p->has_error = true;
+        return 0;
+    }
+    Token* cmd_tok = advance(p);
+    // Build function name string: gggx_<command>
+    char temp_name[64];
+    uint32_t cmd_len = cmd_tok->len;
+    if (cmd_len + 5 >= sizeof(temp_name)) cmd_len = sizeof(temp_name) - 6;
+    temp_name[0] = 'g'; temp_name[1] = 'g'; temp_name[2] = 'g'; temp_name[3] = 'x'; temp_name[4] = '_';
+    for (uint32_t i = 0; i < cmd_len; i++) {
+        temp_name[5 + i] = p->source[cmd_tok->start + i];
+    }
+    uint32_t func_len = 5 + cmd_len;
+    temp_name[func_len] = '\0';
+
+    // Optional slash indicates arguments
+    uint16_t arg_node = 0;
+    if (check(p, TOK_SLASH) || check(p, TOK_DIV)) {
+        advance(p); // consume slash
+        // If next token is backslash, it's zero-arg form
+        if (!check(p, TOK_BACKSLASH)) {
+            // Parse first argument
+            arg_node = parse_expression(p);
+            // Check for optional second argument separated by comma
+            if (match(p, TOK_COMMA)) {
+                uint16_t second = parse_expression(p);
+                if (second != 0 && arg_node != 0) {
+                    uint16_t pair = alloc_node(p, NODE_BINARY_OP);
+                    p->nodes[pair].data.binary.op = TOK_COMMA;
+                    p->nodes[pair].data.binary.left_idx = arg_node;
+                    p->nodes[pair].data.binary.right_idx = second;
+                    arg_node = pair;
+                }
+            }
+        }
+        // Consume trailing backslash if present
+        if (check(p, TOK_BACKSLASH)) {
+            advance(p);
+        }
+    }
+
+    // Create function call node
+    uint16_t call_node = alloc_node(p, NODE_FUNC_CALL);
+    if (call_node == 0) return 0;
+    uint16_t name_node = alloc_node(p, NODE_IDENTIFIER);
+    if (name_node == 0) return 0;
+
+    // Store function name in string pool
+    uint32_t name_offset = p->string_pos;
+    for (uint32_t i = 0; i < func_len; i++) {
+        p->string_pool[p->string_pos++] = temp_name[i];
+    }
+    p->string_pool[p->string_pos++] = '\0';
+
+    p->nodes[name_node].data.ident.name_offset = name_offset;
+    p->nodes[name_node].data.ident.name_len = func_len;
+
+    p->nodes[call_node].data.binary.left_idx = name_node;
+    p->nodes[call_node].data.binary.right_idx = arg_node;
+
+    return call_node;
+}
+
+/* DUPLICATE SNIPPET DISABLED */
+//// ... existing code ...
+//    // GGGX generic: identifier 'gggx' followed by '.'
+//    if (check(p, TOK_IDENTIFIER)) {
+//        Token* id_tok = peek(p);
+//        if (id_tok && id_tok->len == 4 && strncmp(p->source + id_tok->start, "gggx", 4) == 0) {
+//            Token* dot_tok = peek2(p);
+//            if (dot_tok && dot_tok->type == TOK_DOT) {
+//                return parse_gggx_generic_command(p);
+//            }
+//        }
+//    }
+// ... existing code ...

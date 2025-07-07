@@ -2,6 +2,7 @@
 // Arena + Reference Counting + Time Travel Zones + GGGX Support
 
 #include "blaze_internals.h"
+#include <stdlib.h>
 
 // Memory Layout:
 // 0x100000-0x700000: Arena pool (6MB) - Fast temporary allocations
@@ -60,10 +61,18 @@ void memory_init(void) {
     g_memory.total_freed = 0;
     
     // Initialize GGGX support (integrated with MemoryState)
-    g_memory.gggx_manager.traces = (GGGXTrace*)GGGX_START;
-    g_memory.gggx_manager.trace_count = 0;
     g_memory.gggx_manager.trace_capacity = 1000; // Max 1000 traces
-    g_memory.gggx_manager.metadata = (uint8_t*)(GGGX_START + sizeof(GGGXTrace) * 1000);
+    g_memory.gggx_manager.traces = (GGGXTrace*)calloc(g_memory.gggx_manager.trace_capacity, sizeof(GGGXTrace));
+    if (!g_memory.gggx_manager.traces) {
+        print_str("Failed to allocate memory for GGGX traces\n");
+        exit(1);
+    }
+    g_memory.gggx_manager.trace_count = 0;
+    g_memory.gggx_manager.metadata = (uint8_t*)calloc(1, GGGX_SIZE);
+    if (!g_memory.gggx_manager.metadata) {
+        print_str("Failed to allocate memory for GGGX metadata\n");
+        exit(1);
+    }
     g_memory.gggx_manager.total_traces_created = 0;
     g_memory.gggx_manager.total_traces_cleaned = 0;
     g_memory.gggx_manager.last_cleanup_time = 0;
@@ -386,6 +395,7 @@ void memory_test(void) {
 
 // GGGX-specific allocation for computational traces
 void* gggx_alloc_trace(uint64_t size) {
+    print_str("[DEBUG] Enter gggx_alloc_trace\n");
     if (!g_memory.initialized) memory_init();
     
     if (g_memory.gggx_manager.trace_count >= g_memory.gggx_manager.trace_capacity) {
@@ -420,6 +430,7 @@ void* gggx_alloc_trace(uint64_t size) {
 
 // Activate a GGGX trace
 void gggx_trace_activate(uint64_t trace_id) {
+    print_str("[DEBUG] gggx_trace_activate\n");
     if (trace_id > 0 && trace_id <= g_memory.gggx_manager.trace_count) {
         GGGXTrace* trace = &g_memory.gggx_manager.traces[trace_id - 1];
         trace->is_active = true;
@@ -437,6 +448,7 @@ void gggx_trace_deactivate(uint64_t trace_id) {
 
 // Record access to a GGGX trace
 void gggx_trace_access(uint64_t trace_id) {
+    print_str("[DEBUG] gggx_trace_access\n");
     if (trace_id > 0 && trace_id <= g_memory.gggx_manager.trace_count) {
         GGGXTrace* trace = &g_memory.gggx_manager.traces[trace_id - 1];
         trace->access_count++;
@@ -498,6 +510,7 @@ void gggx_trace_cleanup_old(void) {
 
 // Print GGGX trace statistics
 void gggx_trace_stats(void) {
+    print_str("[DEBUG] gggx_trace_stats\n");
     print_str("\n=== GGGX TRACE STATISTICS ===\n");
     print_str("Total traces: ");
     print_num(g_memory.gggx_manager.trace_count);
@@ -529,11 +542,9 @@ void gggx_trace_stats(void) {
     print_num(total_access);
     print_str("\n");
     print_str("Average complexity: ");
-    if (g_memory.gggx_manager.trace_count > 0) {
-        print_num(total_complexity / g_memory.gggx_manager.trace_count);
-    } else {
-        print_str("0");
-    }
+    uint32_t denom = g_memory.gggx_manager.trace_count;
+    uint32_t avg_complexity = denom ? (total_complexity / denom) : 0;
+    print_num(avg_complexity);
     print_str("\n");
     print_str("=============================\n");
 }
