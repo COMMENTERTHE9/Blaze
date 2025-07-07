@@ -115,4 +115,18 @@ gggx_fine_test: test_gggx_fine_grained.c
 	$(CC) -O0 -g -Iinclude -o test_gggx_fine_grained test_gggx_fine_grained.c src/gggx.c src/gggx_integration.c -lm
 	./test_gggx_fine_grained
 
-.PHONY: all clean run debug test gggx_test gggx_fine_test
+# Installation directories
+PREFIX ?= /usr/local
+DESTDIR ?=
+
+# .PHONY update
+.PHONY: all clean run debug test gggx_test gggx_fine_test install
+
+install: $(TARGET)
+	# Create directories if they don't exist and copy files
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 0755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/
+	install -d $(DESTDIR)$(PREFIX)/include/blaze
+	cp -r include/* $(DESTDIR)$(PREFIX)/include/blaze/
+	install -d $(DESTDIR)$(PREFIX)/share/doc/blaze
+	cp -r docs $(DESTDIR)$(PREFIX)/share/doc/blaze/
