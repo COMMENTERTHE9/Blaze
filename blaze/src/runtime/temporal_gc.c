@@ -1,16 +1,26 @@
-// BLAZE TEMPORAL GARBAGE COLLECTOR
-// Timeline-aware mark & sweep that respects causality
+// BLAZE COMPETENT GARBAGE COLLECTOR
+// Mark & sweep with time travel and GGGX support
 
 #include "blaze_internals.h"
 
 // Memory layout constants (from memory_manager.c)
 #define HEAP_START     0xA00000
 #define HEAP_SIZE      0x1600000  // 22MB
+#define GGGX_START     0x2000000
+#define GGGX_SIZE      0x1000000  // 16MB
 
 // Forward declarations
 typedef struct GCRoot GCRoot;
 typedef struct GCStats GCStats;
 typedef struct TimelineLink TimelineLink;
+
+// Function declarations
+void temporal_gc_collect(void);
+void gc_add_root(void* ptr, const char* name);
+void gc_remove_root(void* ptr);
+void gc_add_timeline_link(void* from, void* to, TimeZone from_zone, TimeZone to_zone);
+uint64_t gc_get_timeline(void);
+uint64_t gc_new_timeline(void);
 
 // Root set entry
 struct GCRoot {
@@ -35,6 +45,7 @@ struct GCStats {
     uint64_t freed_objects;
     uint64_t freed_bytes;
     uint64_t moved_objects;
+    uint64_t gggx_traces_cleaned;
     uint64_t cycle_count;
     uint64_t last_gc_time;
 };
@@ -124,8 +135,6 @@ static void gc_mark_phase(void) {
     }
     
     // Mark from PRESENT zone stack frames
-    // For now, we'll use a simplified approach
-    // In a real implementation, we'd need assembly helpers to get actual stack bounds
     uint64_t* stack_base = (uint64_t*)0x7FFFFFFFFFFF;  // Typical stack top
     uint64_t* stack_ptr = (uint64_t*)__builtin_frame_address(0);
     
@@ -186,8 +195,6 @@ static void gc_sweep_phase(void) {
                 g_gc.stats.freed_objects++;
                 g_gc.stats.freed_bytes += header->size;
                 header->flags |= RC_FLAG_MARKED;
-                
-                // Add to free list (TODO: implement free list)
             }
         }
         
@@ -195,7 +202,7 @@ static void gc_sweep_phase(void) {
     }
 }
 
-// Zone migration - move objects between temporal zones
+// Zone migration - move objects between time travel zones
 static void gc_migrate_zones(void) {
     // Migrate old PRESENT objects to PAST
     ZoneManager* present = &g_memory.zones[ZONE_PRESENT];
@@ -221,49 +228,76 @@ static void gc_migrate_zones(void) {
     }
 }
 
-// Main GC entry point
-void temporal_gc_collect(void) {
-    if (g_gc.gc_in_progress) {
-        print_str("GC already in progress!\n");
-        return;
+// Clean up old GGGX traces
+static void gc_cleanup_gggx_traces(void) {
+    uint32_t cleaned = 0;
+    
+    for (uint32_t i = 0; i < g_memory.gggx_manager.trace_count; i++) {
+        GGGXTrace* trace = &g_memory.gggx_manager.traces[i];
+        
+        // Clean up traces that are old and inactive
+        if (trace->is_active == false && trace->access_count > 5) {
+            // Decrease ref count on trace data
+            rc_dec(trace->trace_data);
+            trace->trace_data = NULL;
+            cleaned++;
+        }
     }
     
-    g_gc.gc_in_progress = true;
-    g_gc.stats.cycle_count++;
-    g_gc.mark_color++;  // New color for this cycle
+    g_memory.gggx_manager.total_traces_cleaned += cleaned;
+    g_memory.gggx_manager.last_cleanup_time = g_gc.current_timeline;
     
-    // Reset per-cycle stats
+    g_gc.stats.gggx_traces_cleaned = cleaned;
+    
+    if (cleaned > 0) {
+        print_str("GC: cleaned ");
+        print_num(cleaned);
+        print_str(" old GGGX traces\n");
+    }
+}
+
+// Main garbage collection function
+void temporal_gc_collect(void) {
+    if (g_gc.gc_in_progress) return;
+    
+    g_gc.gc_in_progress = true;
+    g_gc.mark_color++;
+    g_gc.stats.cycle_count++;
+    
+    print_str("Starting garbage collection cycle ");
+    print_num(g_gc.stats.cycle_count);
+    print_str("\n");
+    
+    // Reset stats for this cycle
     g_gc.stats.marked_objects = 0;
     g_gc.stats.freed_objects = 0;
     g_gc.stats.freed_bytes = 0;
     g_gc.stats.moved_objects = 0;
+    g_gc.stats.gggx_traces_cleaned = 0;
     
-    print_str("\n[TEMPORAL GC] Starting cycle ");
-    print_num(g_gc.stats.cycle_count);
-    print_str("\n");
-    
-    // Phase 1: Mark
-    print_str("[TEMPORAL GC] Mark phase...\n");
+    // Mark phase
     gc_mark_phase();
     
-    // Phase 2: Sweep
-    print_str("[TEMPORAL GC] Sweep phase...\n");
+    // Sweep phase
     gc_sweep_phase();
     
-    // Phase 3: Migrate zones
-    print_str("[TEMPORAL GC] Zone migration...\n");
+    // Zone migration
     gc_migrate_zones();
     
-    // Print stats
-    print_str("[TEMPORAL GC] Complete - Marked: ");
+    // GGGX trace cleanup
+    gc_cleanup_gggx_traces();
+    
+    print_str("GC complete: marked ");
     print_num(g_gc.stats.marked_objects);
-    print_str(", Freed: ");
+    print_str(" objects, freed ");
     print_num(g_gc.stats.freed_objects);
-    print_str(" (");
+    print_str(" objects (");
     print_num(g_gc.stats.freed_bytes / 1024);
-    print_str(" KB), Migrated: ");
+    print_str(" KB), moved ");
     print_num(g_gc.stats.moved_objects);
-    print_str("\n\n");
+    print_str(" objects, cleaned ");
+    print_num(g_gc.stats.gggx_traces_cleaned);
+    print_str(" GGGX traces\n");
     
     g_gc.gc_in_progress = false;
 }
@@ -278,21 +312,21 @@ uint64_t gc_new_timeline(void) {
     return ++g_gc.current_timeline;
 }
 
-// Debug: Print all roots
+// Debug functions
 void gc_print_roots(void) {
-    print_str("\n[GC ROOTS]\n");
+    print_str("=== GC ROOTS ===\n");
     for (GCRoot* root = g_gc.roots; root; root = root->next) {
-        print_str("  ");
+        print_str("Root: ");
         print_str(root->name);
-        print_str(": ");
+        print_str(" -> ");
         print_num((uint64_t)root->ptr);
         print_str("\n");
     }
+    print_str("===============\n");
 }
 
-// Debug: Print timeline links
 void gc_print_timeline_links(void) {
-    print_str("\n[TIMELINE LINKS]\n");
+    print_str("=== TIMELINE LINKS ===\n");
     const char* zone_names[] = {"Past", "Present", "Future"};
     
     for (TimelineLink* link = g_gc.timeline_links; link; link = link->next) {
@@ -308,4 +342,28 @@ void gc_print_timeline_links(void) {
         print_num(link->timeline_id);
         print_str("]\n");
     }
+    print_str("===================\n");
+}
+
+void gc_print_stats(void) {
+    print_str("=== GC STATISTICS ===\n");
+    print_str("Cycles: ");
+    print_num(g_gc.stats.cycle_count);
+    print_str("\n");
+    print_str("Total marked: ");
+    print_num(g_gc.stats.marked_objects);
+    print_str("\n");
+    print_str("Total freed: ");
+    print_num(g_gc.stats.freed_objects);
+    print_str("\n");
+    print_str("Total freed bytes: ");
+    print_num(g_gc.stats.freed_bytes / 1024);
+    print_str(" KB\n");
+    print_str("Total moved: ");
+    print_num(g_gc.stats.moved_objects);
+    print_str("\n");
+    print_str("GGGX traces cleaned: ");
+    print_num(g_gc.stats.gggx_traces_cleaned);
+    print_str("\n");
+    print_str("===================\n");
 }

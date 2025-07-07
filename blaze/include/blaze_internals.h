@@ -38,6 +38,39 @@ typedef struct ZoneManager {
     TimeZone zone_type;
 } ZoneManager;
 
+// GGGX computational trace metadata
+typedef struct {
+    uint64_t trace_id;
+    void* trace_data;
+    uint32_t trace_size;
+    uint64_t creation_timeline;
+    bool is_active;
+    uint32_t access_count;
+    uint64_t last_access_time;
+    uint32_t complexity_score;
+    uint16_t confidence_level;
+} GGGXTrace;
+
+// GGGX trace lifecycle states
+typedef enum {
+    GGGX_TRACE_CREATED,
+    GGGX_TRACE_ACTIVE,
+    GGGX_TRACE_IDLE,
+    GGGX_TRACE_ARCHIVED,
+    GGGX_TRACE_CLEANUP
+} GGGXTraceState;
+
+// GGGX trace manager
+typedef struct {
+    GGGXTrace* traces;
+    uint32_t trace_count;
+    uint32_t trace_capacity;
+    uint8_t* metadata;
+    uint64_t total_traces_created;
+    uint64_t total_traces_cleaned;
+    uint64_t last_cleanup_time;
+} GGGXTraceManager;
+
 // Memory management globals
 typedef struct MemoryState {
     void* arena;
@@ -46,6 +79,9 @@ typedef struct MemoryState {
     uint64_t total_allocated;
     uint64_t total_freed;
     bool initialized;
+    
+    // GGGX trace management
+    GGGXTraceManager gggx_manager;
 } MemoryState;
 
 extern MemoryState g_memory;
@@ -831,5 +867,16 @@ bool is_var_float(const char* name);
 bool is_var_solid(const char* name);
 
 void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx, SymbolTable* symbols, char* string_pool);
+
+// GGGX trace management functions
+void* gggx_alloc_trace(uint64_t size);
+void gggx_trace_activate(uint64_t trace_id);
+void gggx_trace_deactivate(uint64_t trace_id);
+void gggx_trace_access(uint64_t trace_id);
+void gggx_trace_cleanup_old(void);
+void gggx_trace_stats(void);
+uint64_t gggx_get_trace_id(void* trace_data);
+void gggx_set_trace_complexity(uint64_t trace_id, uint32_t complexity);
+void gggx_set_trace_confidence(uint64_t trace_id, uint16_t confidence);
 
 #endif // BLAZE_INTERNALS_H

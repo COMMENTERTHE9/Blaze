@@ -1,3 +1,3 @@
 var.i-x = 4
 print/ "x = " \
-txt/x\
+txt/x\ 

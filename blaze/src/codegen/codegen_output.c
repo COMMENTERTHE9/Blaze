@@ -3,6 +3,10 @@
 
 #include "blaze_internals.h"
 
+// Forward declarations
+extern void generate_identifier(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
+                              SymbolTable* symbols, char* string_pool);
+
 // Helper to emit string output using platform-aware print
 static void emit_write_string(CodeBuffer* buf, volatile const char* str, uint32_t len) {
     // Use the platform-aware print function
@@ -164,11 +168,43 @@ void gen_output_method(CodeBuffer* buf, ASTNode* node,
             break;
             
         case TOK_TXT:
-            // Output as-is
-            processed_len = 0;
-            while (content[processed_len] && processed_len < 1024) {
-                processed_buffer[processed_len] = content[processed_len];
-                processed_len++;
+            // For txt/, we need to evaluate the content as a variable or expression
+            // The content should be a variable name or expression that we evaluate
+            if (content_idx != 0xFFFF) {
+                // The content_idx points to a node that contains the variable name
+                // We need to generate code to load the variable value and convert it to string
+                
+                // For now, let's generate code to load the variable and print its value
+                // This is a simplified approach - in a full implementation, we'd convert the value to string
+                
+                // Create a temporary identifier node for the variable
+                ASTNode temp_node;
+                temp_node.type = NODE_IDENTIFIER;
+                temp_node.data.ident.name_offset = content_idx;
+                temp_node.data.ident.name_len = 0;
+                while (content[temp_node.data.ident.name_len]) {
+                    temp_node.data.ident.name_len++;
+                }
+                
+                // Generate code to load the variable value into RAX
+                generate_identifier(buf, &temp_node, 0, symbols, string_pool);
+                
+                // For now, just output the variable name as a placeholder
+                // TODO: Implement proper value-to-string conversion
+                processed_len = 0;
+                while (content[processed_len] && processed_len < 1024) {
+                    processed_buffer[processed_len] = content[processed_len];
+                    processed_len++;
+                }
+                
+                // Add a debug message to show we're processing txt command
+                const char* debug_msg = "DEBUG: txt command processed for variable: ";
+                emit_write_string(buf, debug_msg, 38);
+                emit_write_string(buf, content, processed_len);
+                emit_write_string(buf, "\n", 1);
+            } else {
+                // No content - output empty string
+                processed_len = 0;
             }
             break;
             

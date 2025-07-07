@@ -1,0 +1,47 @@
+// GGGX Trace Lifecycle Management Test
+// Demonstrates advanced trace management with lifecycle states
+
+var.i- trace_id_1 = 0 \
+var.i- trace_id_2 = 0 \
+var.i- trace_id_3 = 0 \
+
+// Allocate GGGX traces with different characteristics
+gggx.init \
+gggx.alloc_trace/ 256 \
+var.i- trace_id_1 = gggx.get_trace_id \
+gggx.set_trace_complexity/ trace_id_1 150 \
+gggx.set_trace_confidence/ trace_id_1 75 \
+
+gggx.alloc_trace/ 512 \
+var.i- trace_id_2 = gggx.get_trace_id \
+gggx.set_trace_complexity/ trace_id_2 300 \
+gggx.set_trace_confidence/ trace_id_2 90 \
+
+gggx.alloc_trace/ 128 \
+var.i- trace_id_3 = gggx.get_trace_id \
+gggx.set_trace_complexity/ trace_id_3 50 \
+gggx.set_trace_confidence/ trace_id_3 60 \
+
+// Access traces to build usage patterns
+gggx.trace_access/ trace_id_1 \
+gggx.trace_access/ trace_id_1 \
+gggx.trace_access/ trace_id_2 \
+gggx.trace_access/ trace_id_3 \
+gggx.trace_access/ trace_id_3 \
+
+// Deactivate some traces to test lifecycle
+gggx.trace_deactivate/ trace_id_3 \
+
+// Print trace statistics
+gggx.print_trace_stats \
+
+// Test trace activation
+gggx.trace_activate/ trace_id_3 \
+
+// Clean up old traces
+gggx.trace_cleanup_old \
+
+// Final statistics
+gggx.print_trace_stats \
+
+txt/ "GGGX Trace Lifecycle Test Complete!" 

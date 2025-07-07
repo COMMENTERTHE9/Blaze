@@ -1,4 +1,4 @@
 var.i-x = 4
 var.i-result = sqrt(x)
 print/ "sqrt(4) = " \
-txt/result 
+txt/result\ 
