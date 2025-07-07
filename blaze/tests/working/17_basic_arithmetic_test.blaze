@@ -8,4 +8,4 @@ txt/x\
 print/ "y = " \
 txt/y\
 print/ "z = x + y = " \
-txt/z 
+txt/z\ 

@@ -1,0 +1,18 @@
+// Simple GGGX Trace Management Test
+
+var.i- test_var = 42 \
+
+// Test basic GGGX functionality
+gggx.init \
+
+// Allocate a trace
+gggx.alloc_trace/ 128 \
+
+// Print some output
+txt/ "GGGX Trace Management Test" \
+print/ test_var \
+
+// Test memory stats
+memory_stats \
+
+txt/ "Test Complete!" 

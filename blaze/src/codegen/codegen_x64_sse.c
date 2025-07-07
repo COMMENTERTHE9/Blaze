@@ -172,3 +172,15 @@ void emit_comisd_xmm_xmm(CodeBuffer* buf, SSERegister xmm1, SSERegister xmm2) {
     emit_byte(buf, 0x2F);
     emit_byte(buf, MODRM(3, xmm1 & 7, xmm2 & 7));
 }
+
+// CMPSD xmm1, xmm2, imm8 - Compare scalar double with immediate comparison type
+void emit_cmpsd_xmm_xmm(CodeBuffer* buf, SSERegister dst, SSERegister src, uint8_t cmp_type) {
+    emit_byte(buf, 0xF2); // SD prefix
+    if (dst >= XMM8 || src >= XMM8) {
+        emit_rex(buf, false, dst >= XMM8, false, src >= XMM8);
+    }
+    emit_byte(buf, 0x0F);
+    emit_byte(buf, 0xC2);
+    emit_byte(buf, MODRM(3, dst & 7, src & 7));
+    emit_byte(buf, cmp_type); // Comparison type immediate
+}

@@ -2448,6 +2448,9 @@ static uint16_t parse_statement(Parser* p) {
     if (check(p, TOK_PRINT) || check(p, TOK_TXT) || check(p, TOK_OUT) || 
         check(p, TOK_FMT) || check(p, TOK_DYN)) {
         TokenType output_type = advance(p)->type;
+        print_str("[PARSER-DEBUG] Entered output method parse_statement for output_type=");
+        print_num(output_type);
+        print_str("\n");
         uint16_t output_node = alloc_node(p, NODE_OUTPUT);
         if (output_node == 0) return 0;
         
@@ -2901,13 +2904,11 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
                     print_num(last_stmt);
                     print_str("\n");
                     
-                    // If this is the second statement, also set program node's right_idx
-                    if (first_stmt != 0 && parser.nodes[program_node].data.binary.right_idx == 0) {
-                        parser.nodes[program_node].data.binary.right_idx = stmt;
-                        print_str("[PARSER] Set program right_idx to second statement ");
-                        print_num(stmt);
-                        print_str("\n");
-                    }
+                                    // Update program node's right_idx to point to the last statement in the chain
+                parser.nodes[program_node].data.binary.right_idx = stmt;
+                print_str("[PARSER] Updated program right_idx to last statement ");
+                print_num(stmt);
+                print_str("\n");
                 } else {
                     print_str("[PARSER] WARNING: Could not link statement (last_stmt=");
                     print_num(last_stmt);
@@ -2955,13 +2956,11 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
                 print_num(last_stmt);
                 print_str("\n");
                 
-                // If this is the second statement, also set program node's right_idx
-                if (first_stmt != 0 && parser.nodes[program_node].data.binary.right_idx == 0) {
-                    parser.nodes[program_node].data.binary.right_idx = stmt;
-                    print_str("[PARSER] Set program right_idx to second statement ");
-                    print_num(stmt);
-                    print_str("\n");
-                }
+                // Update program node's right_idx to point to the last statement in the chain
+                parser.nodes[program_node].data.binary.right_idx = stmt;
+                print_str("[PARSER] Updated program right_idx to last statement ");
+                print_num(stmt);
+                print_str("\n");
             } else {
                 print_str("[PARSER] WARNING: Could not link statement (last_stmt=");
                 print_num(last_stmt);

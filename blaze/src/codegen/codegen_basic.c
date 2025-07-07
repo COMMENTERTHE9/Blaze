@@ -1142,7 +1142,7 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
     print_num(node->data.output.content_idx);
     print_str("\n");
     
-    if (node->data.output.output_type == TOK_PRINT) {
+    if (node->data.output.output_type == TOK_PRINT || node->data.output.output_type == TOK_TXT) {
         // Get content index
         uint32_t content_idx = node->data.output.content_idx;
         
@@ -1537,12 +1537,20 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
     
     switch (stmt_node->type) {
         case NODE_PROGRAM:
-            // Program node - process its children (statements)
-            if (stmt_node->data.binary.left_idx != 0) {
-                generate_statement(buf, nodes, stmt_node->data.binary.left_idx, symbols, string_pool);
-            }
-            if (stmt_node->data.binary.right_idx != 0) {
-                generate_statement(buf, nodes, stmt_node->data.binary.right_idx, symbols, string_pool);
+            // Program node - process all statements in the chain
+            // Start with the first statement and follow the chain
+            uint16_t current_stmt = stmt_node->data.binary.left_idx;
+            while (current_stmt != 0 && current_stmt < 4096) {
+                generate_statement(buf, nodes, current_stmt, symbols, string_pool);
+                // Move to next statement in chain
+                ASTNode* current_node = &nodes[current_stmt];
+                if (current_node->type == NODE_BINARY_OP || current_node->type == NODE_OUTPUT || 
+                    current_node->type == NODE_IDENTIFIER || current_node->type == NODE_NUMBER || 
+                    current_node->type == NODE_FLOAT) {
+                    current_stmt = current_node->data.binary.right_idx;
+                } else {
+                    break; // End of chain
+                }
             }
             break;
             
