@@ -36,15 +36,19 @@ static uint32_t skip_whitespace(const char* input, uint32_t pos, uint32_t len, u
 
 // Skip comment
 static uint32_t skip_comment(const char* input, uint32_t pos, uint32_t len) {
-    if (pos + 1 < len && input[pos] == '#' && input[pos + 1] == '#') {
-        pos += 2;
-        // Skip until end of line or next ##
-        while (pos < len && input[pos] != '\n') {
-            if (pos + 1 < len && input[pos] == '#' && input[pos + 1] == '#') {
-                pos += 2;
-                break;
+    if (pos + 1 < len) {
+        // Blaze block comment style: ## comment ##
+        if (input[pos] == '#' && input[pos + 1] == '#') {
+            pos += 2;
+            // Skip until end of line or next ##
+            while (pos < len && input[pos] != '\n') {
+                if (pos + 1 < len && input[pos] == '#' && input[pos + 1] == '#') {
+                    pos += 2;
+                    break;
+                }
+                pos++;
             }
-            pos++;
+        /* Blaze comment syntax is only ## comment ## (double-hash). */
         }
     }
     return pos;
