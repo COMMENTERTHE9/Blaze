@@ -1303,6 +1303,7 @@ void generate_output(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx,
                       content_node->type == NODE_IDENTIFIER ||
                       content_node->type == NODE_UNARY_OP ||
                       content_node->type == NODE_FUNC_CALL) {
+                print_str("[OUTPUT] Entered expression/identifier branch\n");
                 // For function calls, we need to generate the call first
                 if (content_node->type == NODE_FUNC_CALL) {
                     generate_func_call(buf, nodes, content_idx, symbols, string_pool);
@@ -1546,7 +1547,8 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                 ASTNode* current_node = &nodes[current_stmt];
                 if (current_node->type == NODE_BINARY_OP || current_node->type == NODE_OUTPUT || 
                     current_node->type == NODE_IDENTIFIER || current_node->type == NODE_NUMBER || 
-                    current_node->type == NODE_FLOAT) {
+                    current_node->type == NODE_FLOAT || current_node->type == NODE_VAR_DEF ||
+                    current_node->type == NODE_WHILE_LOOP || current_node->type == NODE_FOR_LOOP) {
                     current_stmt = current_node->data.binary.right_idx;
                 } else {
                     break; // End of chain
@@ -1559,9 +1561,54 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
             break;
             
         case NODE_BINARY_OP:
-            // Handle variable definitions and assignments
+            // Handle assignments and other binary operations
             if (stmt_node->data.binary.op == TOK_EQUALS) {
-                generate_var_def(buf, nodes, stmt_idx, symbols, string_pool);
+                // Generate assignment: variable = expression
+                uint16_t var_idx = stmt_node->data.binary.left_idx;
+                uint16_t expr_idx = stmt_node->data.binary.right_idx;
+                
+                print_str("[ASSIGN] Generating assignment: var=");
+                print_num(var_idx);
+                print_str(" expr=");
+                print_num(expr_idx);
+                print_str("\n");
+                
+                // Generate the expression (result in RAX)
+                if (expr_idx != 0) {
+                    generate_expression(buf, nodes, expr_idx, symbols, string_pool);
+                }
+                
+                // Store the result in the variable
+                if (var_idx != 0 && nodes[var_idx].type == NODE_IDENTIFIER) {
+                    // Get variable name from identifier node
+                    ASTNode* var_node = &nodes[var_idx];
+                    uint32_t name_offset = var_node->data.ident.name_offset;
+                    uint32_t name_len = var_node->data.ident.name_len;
+                    
+                    // Extract variable name
+                    char var_name[32];
+                    for (uint32_t i = 0; i < name_len && i < 31; i++) {
+                        var_name[i] = string_pool[name_offset + i];
+                    }
+                    var_name[name_len] = '\0';
+                    
+                    print_str("[ASSIGN] Storing to variable: ");
+                    print_str(var_name);
+                    print_str("\n");
+                    
+                    // Store RAX to variable
+                    extern VarEntry* get_or_create_var(const char* name);
+                    VarEntry* var = get_or_create_var(var_name);
+                    if (var && var->is_initialized) {
+                        // Store RAX to stack location
+                        emit_mov_mem_reg(buf, RBP, var->stack_offset, RAX);
+                        print_str("[ASSIGN] Stored to stack offset ");
+                        print_num(var->stack_offset);
+                        print_str("\n");
+                    } else {
+                        print_str("[ASSIGN] ERROR: Variable not found or not initialized\n");
+                    }
+                }
             } else {
                 // Treat as expression
                 generate_expression(buf, nodes, stmt_idx, symbols, string_pool);
@@ -1606,6 +1653,121 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
             generate_expression(buf, nodes, stmt_idx, symbols, string_pool);
             break;
             
+        case NODE_RETURN: {
+            // Handle return statements
+            uint16_t expr_idx = stmt_node->data.binary.left_idx;
+            print_str("[RETURN] Generating return expression idx=");
+            print_num(expr_idx);
+            print_str("\n");
+            // Evaluate expression if present
+            if (expr_idx != 0 && expr_idx < 4096) {
+                generate_expression(buf, nodes, expr_idx, symbols, string_pool);
+            } else {
+                // If no expression, default return 0
+                emit_mov_reg_imm64(buf, RAX, 0);
+            }
+            // Emit function epilogue / ret
+            extern void emit_function_epilogue(CodeBuffer* buf);
+            emit_function_epilogue(buf);
+            break;
+        }
+        
+        case NODE_WHILE_LOOP: {
+            // Generate while loop
+            print_str("[WHILE] Generating while loop at index ");
+            print_num(stmt_idx);
+            print_str("\n");
+            
+            // Label for loop start
+            uint32_t loop_start = buf->position;
+            
+            // Generate condition check
+            uint16_t condition_idx = stmt_node->data.while_loop.condition_idx;
+            if (condition_idx != 0) {
+                generate_expression(buf, nodes, condition_idx, symbols, string_pool);
+                
+                // Test result in RAX
+                emit_mov_reg_imm64(buf, RBX, 0);
+                emit_cmp_reg_reg(buf, RAX, RBX);
+                
+                // Jump to end if condition is false (RAX == 0)
+                emit_je_rel32(buf, 0); // We'll patch this offset later
+                uint32_t exit_jump_pos = buf->position - 4; // Remember where to patch
+                
+                // Generate loop body
+                uint16_t body_idx = stmt_node->data.while_loop.body_idx;
+                if (body_idx != 0) {
+                    generate_statement(buf, nodes, body_idx, symbols, string_pool);
+                }
+                
+                // Jump back to condition check
+                int32_t back_offset = (int32_t)loop_start - (int32_t)buf->position - 5;
+                emit_jmp_rel32(buf, back_offset);
+                
+                // Patch the exit jump
+                uint32_t exit_offset = buf->position - exit_jump_pos - 4;
+                buf->code[exit_jump_pos] = exit_offset & 0xFF;
+                buf->code[exit_jump_pos + 1] = (exit_offset >> 8) & 0xFF;
+                buf->code[exit_jump_pos + 2] = (exit_offset >> 16) & 0xFF;
+                buf->code[exit_jump_pos + 3] = (exit_offset >> 24) & 0xFF;
+            }
+            break;
+        }
+        
+        case NODE_FOR_LOOP: {
+            // Generate for loop
+            print_str("[FOR] Generating for loop at index ");
+            print_num(stmt_idx);
+            print_str("\n");
+            
+            // Generate initialization
+            uint16_t init_idx = stmt_node->data.for_loop.init_idx;
+            if (init_idx != 0) {
+                generate_statement(buf, nodes, init_idx, symbols, string_pool);
+            }
+            
+            // Label for loop start
+            uint32_t loop_start = buf->position;
+            
+            // Generate condition check
+            uint16_t condition_idx = stmt_node->data.for_loop.condition_idx;
+            if (condition_idx != 0) {
+                generate_expression(buf, nodes, condition_idx, symbols, string_pool);
+                
+                // Test result in RAX
+                emit_mov_reg_imm64(buf, RBX, 0);
+                emit_cmp_reg_reg(buf, RAX, RBX);
+                
+                // Jump to end if condition is false (RAX == 0)
+                emit_je_rel32(buf, 0); // We'll patch this offset later
+                uint32_t exit_jump_pos = buf->position - 4; // Remember where to patch
+                
+                // Generate loop body
+                uint16_t body_idx = stmt_node->data.for_loop.body_idx;
+                if (body_idx != 0) {
+                    generate_statement(buf, nodes, body_idx, symbols, string_pool);
+                }
+                
+                // Generate increment
+                uint16_t increment_idx = stmt_node->data.for_loop.increment_idx;
+                if (increment_idx != 0) {
+                    generate_expression(buf, nodes, increment_idx, symbols, string_pool);
+                }
+                
+                // Jump back to condition check
+                int32_t back_offset = (int32_t)loop_start - (int32_t)buf->position - 5;
+                emit_jmp_rel32(buf, back_offset);
+                
+                // Patch the exit jump
+                uint32_t exit_offset = buf->position - exit_jump_pos - 4;
+                buf->code[exit_jump_pos] = exit_offset & 0xFF;
+                buf->code[exit_jump_pos + 1] = (exit_offset >> 8) & 0xFF;
+                buf->code[exit_jump_pos + 2] = (exit_offset >> 16) & 0xFF;
+                buf->code[exit_jump_pos + 3] = (exit_offset >> 24) & 0xFF;
+            }
+            break;
+        }
+            
         default:
             print_str("CODEGEN_ERROR: Unsupported statement type ");
             print_num(stmt_node->type);
@@ -1638,34 +1800,119 @@ void generate_conditional(CodeBuffer* buf, ASTNode* nodes, uint16_t cond_idx,
     print_num(cond_node->data.binary.op);
     print_str("\n");
     
-    // Get the condition parameter and body
-    uint16_t param_idx = cond_node->data.binary.left_idx;
+    TokenType cond_type = cond_node->data.binary.op;
+    uint16_t condition_idx = cond_node->data.binary.left_idx;
     uint16_t body_idx = cond_node->data.binary.right_idx;
     
-    // Generate the condition expression
-    if (param_idx != 0 && param_idx < 4096) {
-        generate_expression(buf, nodes, param_idx, symbols, string_pool);
-        // Result is now in RAX
+    if (cond_type == TOK_COND_IF) {
+        // Generate if statement (and possibly else)
+        print_str("[COND] Generating if statement\n");
+        
+        // Generate condition evaluation
+        if (condition_idx != 0) {
+            print_str("[COND] Evaluating condition at node ");
+            print_num(condition_idx);
+            print_str("\n");
+            
+            // Generate the condition expression
+            generate_expression(buf, nodes, condition_idx, symbols, string_pool);
+            
+            // The result should be in RAX. Compare with 0 for truthiness
+            // emit_cmp_reg_imm32(buf, RAX, 0);
+            emit_byte(buf, 0x48);  // REX.W prefix
+            emit_byte(buf, 0x83);  // CMP with immediate
+            emit_byte(buf, 0xF8);  // ModR/M for CMP RAX, imm8
+            emit_byte(buf, 0x00);  // immediate value 0
+            
+            // Jump to end if condition is false (zero)
+            uint32_t jump_to_end_pos = buf->position;
+            // emit_je_rel32(buf, 0);  // Jump if equal (condition false) - patch later
+            emit_byte(buf, 0x0F);  // Two-byte opcode prefix
+            emit_byte(buf, 0x84);  // JE (jump if equal)
+            emit_byte(buf, 0x00);  // Placeholder for offset (will be patched)
+            emit_byte(buf, 0x00);
+            emit_byte(buf, 0x00);
+            emit_byte(buf, 0x00);
+            
+            print_str("[COND] Generated conditional jump at position ");
+            print_num(jump_to_end_pos);
+            print_str("\n");
+            
+            // Generate if body
+            if (body_idx != 0) {
+                print_str("[COND] Generating if body at node ");
+                print_num(body_idx);
+                print_str("\n");
+                generate_statement(buf, nodes, body_idx, symbols, string_pool);
+            }
+            
+            // Patch the jump offset to point to the end
+            uint32_t end_pos = buf->position;
+            uint32_t offset = end_pos - (jump_to_end_pos + 6); // 6 = size of JE instruction
+            
+            // Patch the offset in the JE instruction
+            buf->code[jump_to_end_pos + 2] = (offset) & 0xFF;
+            buf->code[jump_to_end_pos + 3] = (offset >> 8) & 0xFF;
+            buf->code[jump_to_end_pos + 4] = (offset >> 16) & 0xFF;
+            buf->code[jump_to_end_pos + 5] = (offset >> 24) & 0xFF;
+            
+            print_str("[COND] Patched jump offset to ");
+            print_num(offset);
+            print_str("\n");
+        }
+        
+    } else if (cond_type == TOK_COND_WHL) {
+        // Generate while loop
+        print_str("[COND] Generating while loop\n");
+        
+        // Mark the start of the loop for back-jumping
+        uint32_t loop_start = buf->position;
+        
+        // Generate condition evaluation
+        if (condition_idx != 0) {
+            generate_expression(buf, nodes, condition_idx, symbols, string_pool);
+            
+            // Compare with 0 for truthiness
+            emit_byte(buf, 0x48);  // REX.W prefix
+            emit_byte(buf, 0x83);  // CMP with immediate
+            emit_byte(buf, 0xF8);  // ModR/M for CMP RAX, imm8
+            emit_byte(buf, 0x00);  // immediate value 0
+            
+            // Jump to end if condition is false
+            uint32_t jump_to_end_pos = buf->position;
+            emit_byte(buf, 0x0F);  // Two-byte opcode prefix
+            emit_byte(buf, 0x84);  // JE (jump if equal)
+            emit_byte(buf, 0x00);  // Placeholder for offset
+            emit_byte(buf, 0x00);
+            emit_byte(buf, 0x00);
+            emit_byte(buf, 0x00);
+            
+            // Generate loop body
+            if (body_idx != 0) {
+                generate_statement(buf, nodes, body_idx, symbols, string_pool);
+            }
+            
+            // Jump back to loop start
+            uint32_t jump_back_pos = buf->position;
+            int32_t back_offset = loop_start - (jump_back_pos + 5); // 5 = size of JMP instruction
+            emit_byte(buf, 0xE9);  // JMP rel32
+            emit_byte(buf, (back_offset) & 0xFF);
+            emit_byte(buf, (back_offset >> 8) & 0xFF);
+            emit_byte(buf, (back_offset >> 16) & 0xFF);
+            emit_byte(buf, (back_offset >> 24) & 0xFF);
+            
+            // Patch the jump to end
+            uint32_t end_pos = buf->position;
+            uint32_t offset = end_pos - (jump_to_end_pos + 6);
+            buf->code[jump_to_end_pos + 2] = (offset) & 0xFF;
+            buf->code[jump_to_end_pos + 3] = (offset >> 8) & 0xFF;
+            buf->code[jump_to_end_pos + 4] = (offset >> 16) & 0xFF;
+            buf->code[jump_to_end_pos + 5] = (offset >> 24) & 0xFF;
+        }
+        
+    } else {
+        print_str("[COND] Unsupported conditional type ");
+        print_num(cond_type);
+        print_str("\n");
     }
-    
-    // For now, implement basic if/else logic
-    // Test RAX (condition result)
-    emit_test_reg_reg(buf, RAX, RAX);
-    
-    // Jump if zero (condition is false)
-    emit_byte(buf, 0x74); // JZ
-    uint32_t jump_pos = buf->position;
-    emit_byte(buf, 0x00); // Placeholder offset
-    
-    // Generate the body (true case)
-    if (body_idx != 0 && body_idx < 4096) {
-        generate_statement(buf, nodes, body_idx, symbols, string_pool);
-    }
-    
-    // Calculate jump offset to skip the body
-    uint32_t body_end = buf->position;
-    int8_t jump_offset = body_end - (jump_pos + 1);
-    buf->code[jump_pos] = jump_offset;
-    
-    print_str("[COND] Conditional generation complete\n");
 }

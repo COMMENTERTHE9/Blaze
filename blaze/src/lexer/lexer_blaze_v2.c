@@ -67,26 +67,38 @@ static bool match_string(const char* input, uint32_t pos, uint32_t len, const ch
     return true;
 }
 
-// Parse variable declaration: var.v-name-[value], constant: var.c-name-[value], or solid: var.d-name-[value]
+// Parse variable declaration: var.i-name-[value], var.f-name-[value], etc.
 static uint32_t parse_var_decl(const char* input, uint32_t pos, uint32_t len, Token* tok) {
-    bool is_const = false;
-    bool is_solid = false;
+    TokenType var_type = TOK_VAR;
+    uint32_t skip_len = 0;
     
     if (match_string(input, pos, len, "var.v-")) {
-        is_const = false;
-        is_solid = false;
+        var_type = TOK_VAR;
+        skip_len = 6;
+    } else if (match_string(input, pos, len, "var.i-")) {
+        var_type = TOK_VAR_INT;
+        skip_len = 6;
+    } else if (match_string(input, pos, len, "var.f-")) {
+        var_type = TOK_VAR_FLOAT;
+        skip_len = 6;
+    } else if (match_string(input, pos, len, "var.s-")) {
+        var_type = TOK_VAR_STRING;
+        skip_len = 6;
+    } else if (match_string(input, pos, len, "var.b-")) {
+        var_type = TOK_VAR_BOOL;
+        skip_len = 6;
     } else if (match_string(input, pos, len, "var.c-")) {
-        is_const = true;
-        is_solid = false;
+        var_type = TOK_CONST;
+        skip_len = 6;
     } else if (match_string(input, pos, len, "var.d-")) {
-        is_const = false;
-        is_solid = true;
+        var_type = TOK_VAR_SOLID;
+        skip_len = 6;
     } else {
         return 0;
     }
     
     uint32_t start = pos;
-    pos += 6; // Skip "var.v-" or "var.c-"
+    pos += skip_len;
     
     // Now we need to find the variable name
     uint32_t name_start = pos;
@@ -98,22 +110,14 @@ static uint32_t parse_var_decl(const char* input, uint32_t pos, uint32_t len, To
     
     // Check if there's an initialization
     if (pos < len && input[pos] == '-' && pos + 1 < len && input[pos + 1] == '[') {
-        // This is var.v-name-[value], var.c-name-[value], or var.d-name-[value] pattern
+        // This is var.i-name-[value], var.f-name-[value], etc. pattern
         pos++; // Skip '-'
-        if (is_solid) {
-            tok->type = TOK_VAR_SOLID;
-        } else {
-            tok->type = is_const ? TOK_CONST : TOK_VAR;
-        }
+        tok->type = var_type;
         tok->len = pos - start;
         return pos;
     } else if (pos > name_start) {
-        // Just var.v-name, var.c-name, or var.d-name
-        if (is_solid) {
-            tok->type = TOK_VAR_SOLID;
-        } else {
-            tok->type = is_const ? TOK_CONST : TOK_VAR;
-        }
+        // Just var.i-name, var.f-name, etc.
+        tok->type = var_type;
         tok->len = pos - start;
         return pos;
     }
@@ -141,6 +145,15 @@ static uint32_t parse_identifier(const char* input, uint32_t pos, uint32_t len, 
         tok->type = TOK_BNC;
     } else if (word_len == 4 && match_string(input, start, len, "recv")) {
         tok->type = TOK_RECV;
+    } else if (word_len == 2 && match_string(input, start, len, "if")) {
+        // Direct if keyword
+        tok->type = TOK_COND_IF;
+    } else if (word_len == 5 && match_string(input, start, len, "while")) {
+        // Direct while keyword  
+        tok->type = TOK_COND_WHL;
+    } else if (word_len == 4 && match_string(input, start, len, "else")) {
+        // Direct else keyword
+        tok->type = TOK_ELSE;
     } else if (word_len == 4 && match_string(input, start, len, "func")) {
         // Check if this is followed by .can
         if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "can")) {
@@ -563,6 +576,13 @@ static uint32_t parse_output_method(const char* input, uint32_t pos, uint32_t le
         return pos + 4;
     }
     
+    // Detect return/
+    if (pos + 6 < len && strncmp(&input[pos], "return/", 7) == 0) {
+        tok->type = TOK_RETURN;
+        tok->len = 7;
+        return pos + 7;
+    }
+    
     return 0;
 }
 
@@ -721,6 +741,7 @@ static uint32_t parse_conditional(const char* input, uint32_t pos, uint32_t len,
         {"grd", TOK_COND_GRD, 3},
         {"unl", TOK_COND_UNL, 3},
         {"whl", TOK_COND_WHL, 3},
+        {"for", TOK_COND_FOR, 3},
         {"unt", TOK_COND_UNT, 3},
         {"obs", TOK_COND_OBS, 3},
         {"det", TOK_COND_DET, 3},
@@ -861,20 +882,27 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
             }
             print_str("'\n");
             print_str("[LEXER] ENTERED < PARAM/ACTION BLOCK at pos "); print_num(pos); print_str("\n");
+            
+            uint32_t saved_pos = pos;  // Save original position
             pos++; // consume '<'
             pos = skip_whitespace(input, pos, len, &line);
             uint32_t new_pos = skip_comment(input, pos, len);
             if (new_pos != pos) pos = new_pos;
+            
+            bool found_param_or_action = false;
+            
             // Parse zero or more parameters
             while ((next_pos = parse_parameter_after_lt(input, pos, len, &output[token_count])) != 0) {
                 print_str("[LEXER] Found parameter token at pos "); print_num(pos); print_str("\n");
                 output[token_count].start = pos;
                 pos = next_pos;
                 token_count++;
+                found_param_or_action = true;
                 pos = skip_whitespace(input, pos, len, &line);
                 new_pos = skip_comment(input, pos, len);
                 if (new_pos != pos) pos = new_pos;
             }
+            
             // Always skip whitespace/comments before action block, even if no params
             pos = skip_whitespace(input, pos, len, &line);
             new_pos = skip_comment(input, pos, len);
@@ -897,10 +925,18 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                 output[token_count].start = pos;
                 pos = next_pos;
                 token_count++;
+                found_param_or_action = true;
                 continue;
             }
-            // If not action, treat < as temporal op (fall through)
-            // (do not emit < token here)
+            
+            // If we didn't find any parameters or actions, reset position and treat < as TOK_LT
+            if (!found_param_or_action) {
+                print_str("[LEXER] No param/action found, treating < as TOK_LT\n");
+                pos = saved_pos;  // Reset to original position
+                // Fall through to single-character token handler
+            } else {
+                continue;  // We processed parameter/action block successfully
+            }
         }
         // Now check for temporal op if parameter/action block did not match
         if ((next_pos = parse_temporal_op(input, pos, len, tok)) != 0) {
@@ -929,6 +965,14 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
         // Try output methods: print/, txt/, out/, fmt/, dyn/, asm/
         if ((next_pos = parse_output_method(input, pos, len, tok)) != 0) {
             print_str("[LEXER] Found output method at pos "); print_num(pos); print_str(" type="); print_num(tok->type); print_str("\n");
+            pos = next_pos;
+            token_count++;
+            continue;
+        }
+        
+        // Try conditional: f.whl, f.for, f.if, etc.
+        if ((next_pos = parse_conditional(input, pos, len, tok)) != 0) {
+            print_str("[LEXER] Found conditional at pos "); print_num(pos); print_str(" type="); print_num(tok->type); print_str("\n");
             pos = next_pos;
             token_count++;
             continue;
