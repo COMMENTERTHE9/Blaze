@@ -247,6 +247,7 @@ typedef enum {
     TOK_COND_UNL,        // f.unl or fucn.unl
     TOK_COND_IF,         // f.if or fucn.if
     TOK_COND_WHL,        // f.whl or fucn.whl
+    TOK_COND_FOR,        // f.for or fucn.for
     TOK_COND_UNT,        // f.unt or fucn.unt
     TOK_COND_OBS,        // f.obs or fucn.obs
     TOK_COND_DET,        // f.det or fucn.det
@@ -258,6 +259,7 @@ typedef enum {
     TOK_COND_DEC,        // f.dec or fucn.dec
     TOK_COND_ASS,        // f.ass or fucn.ass
     TOK_COND_MSR,        // f.msr or fucn.msr
+    TOK_ELSE,            // else (for if-else statements)
     
     // GGGX tokens
     TOK_GGGX_INIT,       // gggx.init
@@ -380,7 +382,8 @@ typedef enum {
     
     // Control
     TOK_EOF,
-    TOK_ERROR
+    TOK_ERROR,
+    TOK_RETURN           // return/ (function return statement)
 } TokenType;
 
 // Token structure - minimal size
@@ -480,11 +483,13 @@ typedef enum {
     NODE_BOOL,
     NODE_RETURN,
     NODE_TERNARY_OP,
-    NODE_COMPOUND_ASSIGN
+    NODE_COMPOUND_ASSIGN,
+    NODE_WHILE_LOOP,
+    NODE_FOR_LOOP
 } NodeType;
 
 // Define the maximum node type value
-#define NODE_TYPE_MAX (NODE_RETURN + 1)
+#define NODE_TYPE_MAX (NODE_FOR_LOOP + 1)
 
 // AST Node - compact representation
 typedef struct ASTNode {
@@ -588,6 +593,20 @@ typedef struct ASTNode {
             uint8_t terminal_len;       // Terminal digit count
             uint8_t terminal_type;      // 0=digits, 1=undefined(∅), 2=superposition({*})
         } solid;
+        
+        // While loop
+        struct {
+            uint16_t condition_idx;     // Condition expression
+            uint16_t body_idx;          // Loop body statement block
+        } while_loop;
+        
+        // For loop
+        struct {
+            uint16_t init_idx;          // Initialization statement
+            uint16_t condition_idx;     // Condition expression
+            uint16_t increment_idx;     // Increment expression
+            uint16_t body_idx;          // Loop body statement block
+        } for_loop;
         
         // Boolean value
         struct {

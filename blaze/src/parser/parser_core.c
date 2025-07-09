@@ -925,7 +925,8 @@ static int get_precedence(TokenType type) {
         case TOK_EXPONENT:
             return 7;
             
-        // Compound assignment operators (same precedence as their base operators)
+        // Assignment operators (low precedence, right associative)
+        case TOK_EQUALS:
         case TOK_PLUS_EQUAL:
         case TOK_MINUS_EQUAL:
         case TOK_STAR_EQUAL:
@@ -1000,8 +1001,6 @@ static int get_precedence(TokenType type) {
             return 0;
             
         // Temporal operators (lowest precedence)
-        case TOK_LT:
-        case TOK_GT:
         case TOK_TIMING_ONTO:
         case TOK_TIMING_INTO:
         case TOK_TIMING_BOTH:
@@ -1016,6 +1015,11 @@ static int get_precedence(TokenType type) {
 static bool is_right_assoc(TokenType type) {
     // Exponentiation is right associative (like in most languages)
     if (type == TOK_EXPONENT) return true;
+    
+    // Assignment operators are right associative (a = b = c)
+    if (type == TOK_EQUALS || type == TOK_PLUS_EQUAL || type == TOK_MINUS_EQUAL ||
+        type == TOK_STAR_EQUAL || type == TOK_DIV_EQUAL || type == TOK_PERCENT_EQUAL ||
+        type == TOK_EXPONENT_EQUAL) return true;
     
     // Most operators are left associative
     return false;
@@ -1128,6 +1132,8 @@ static uint16_t parse_expression_prec(Parser* p, int min_prec) {
             op_type = TOK_PERCENT_EQUAL;
         } else if (check(p, TOK_EXPONENT_EQUAL)) {
             op_type = TOK_EXPONENT_EQUAL;
+        } else if (check(p, TOK_EQUALS)) {
+            op_type = TOK_EQUALS;
         } else if (check(p, TOK_INCREMENT)) {
             op_type = TOK_INCREMENT;
         } else if (check(p, TOK_DECREMENT)) {
@@ -1138,6 +1144,20 @@ static uint16_t parse_expression_prec(Parser* p, int min_prec) {
             op_type = TOK_LT_CMP;
         } else if (check(p, TOK_GT_CMP)) {
             op_type = TOK_GT_CMP;
+        } else if (check(p, TOK_GT)) {
+            op_type = TOK_GT;
+        } else if (check(p, TOK_LT)) {
+            // Check if this TOK_LT is a block delimiter (not a comparison)
+            // If the next token after TOK_LT is a newline or statement, it's likely a block delimiter
+            Token* next = peek2(p);
+            if (next && (next->type == TOK_IDENTIFIER || 
+                        next->type == TOK_VAR_INT || next->type == TOK_VAR_FLOAT || 
+                        next->type == TOK_PRINT || next->type == TOK_COND_IF || 
+                        next->type == TOK_COND_WHL || next->type == TOK_COND_FOR || next->type == TOK_EQUALS)) {
+                // This is likely a block delimiter, not a comparison operator
+                break;
+            }
+            op_type = TOK_LT;
         } else if (check(p, TOK_LE)) {
             op_type = TOK_LE;
         } else if (check(p, TOK_GE)) {
@@ -1872,32 +1892,80 @@ static uint16_t parse_pipe_func_def(Parser* p) {
     
     // Parse parameters /{@param:name}
     
-    // The lexer might have already parsed the parameter as TOK_PARAM
+    // After creating func_node and name_node, before parsing parameters, declare param_start and param_last
+    uint16_t param_start = 0;
+    uint16_t param_last = 0;
+
+    // Helper lambda style macro to append a parameter identifier node to the chain
+    #define ADD_PARAM_NODE(id_idx)                                    \
+        do {                                                         \
+            if (param_start == 0) {                                  \
+                param_start = (id_idx);                              \
+            } else if (param_last != 0) {                            \
+                p->nodes[param_last].data.binary.right_idx = (id_idx);\
+            }                                                        \
+            param_last = (id_idx);                                   \
+        } while (0)
+
+    // ---------------- Parse parameter tokens ------------------
+    // First, handle pre-lexed TOK_PARAM tokens ( {@param:name} )
     while (check(p, TOK_PARAM)) {
-        advance(p);
-    }
-    
-    // Or it might be separate tokens
-    while (match(p, TOK_SLASH)) {
-        if (check(p, TOK_LBRACE)) {
-            advance(p); // consume {
-            if (match(p, TOK_AT)) {
-                // Expect param:name pattern
-                if (check(p, TOK_IDENTIFIER)) {
-                    Token* param_tok = advance(p);
-                    // Check for :name part
-                    if (match(p, TOK_COLON) && check(p, TOK_IDENTIFIER)) {
-                        Token* name = advance(p);
-                        // TODO: Store parameter properly
-                    }
-                }
-            }
-            match(p, TOK_RBRACE); // consume }
-        } else if (check(p, TOK_PARAM)) {
-            // Handle pre-lexed parameter token
-            advance(p);
+        Token* param_tok = advance(p);
+        // Extract between "{" and "}" skipping {@ and optional prefix upto ':'
+        const char* text = p->source + param_tok->start;
+        uint32_t len = param_tok->len;
+        // Very naive parse: find ':' and '}'
+        uint32_t i = 0;
+        while (i < len && text[i] != ':') i++;
+        if (i + 1 >= len) continue; // malformed
+        uint32_t name_start = i + 1;
+        uint32_t name_len = 0;
+        while (name_start + name_len < len && text[name_start + name_len] != '}') name_len++;
+        if (name_len == 0) continue;
+        // Store to string pool
+        if (p->string_pos + name_len + 1 >= 4096) continue;
+        uint32_t name_offset = p->string_pos;
+        for (uint32_t j = 0; j < name_len; j++) {
+            p->string_pool[p->string_pos++] = text[name_start + j];
         }
+        p->string_pool[p->string_pos++] = '\0';
+        uint16_t id_idx = alloc_node(p, NODE_IDENTIFIER);
+        if (id_idx == 0) continue;
+        p->nodes[id_idx].data.ident.name_offset = name_offset;
+        p->nodes[id_idx].data.ident.name_len = name_len;
+        ADD_PARAM_NODE(id_idx);
     }
+
+    // Second form: /{ @param:name }/ pattern parsed token-by-token
+    while (match(p, TOK_SLASH)) {
+        if (!check(p, TOK_LBRACE)) break;
+        advance(p); // consume {
+        match(p, TOK_AT); // optional @
+        if (!check(p, TOK_IDENTIFIER)) break;
+        Token* param_tok = advance(p);
+        // optional : name
+        Token* name_tok = NULL;
+        if (match(p, TOK_COLON) && check(p, TOK_IDENTIFIER)) {
+            name_tok = advance(p);
+        } else {
+            name_tok = param_tok; // use same token
+        }
+        match(p, TOK_RBRACE); // consume }
+        // Store name
+        uint32_t name_offset = store_string(p, name_tok);
+        uint16_t id_idx = alloc_node(p, NODE_IDENTIFIER);
+        if (id_idx == 0) continue;
+        p->nodes[id_idx].data.ident.name_offset = name_offset;
+        p->nodes[id_idx].data.ident.name_len = name_tok->len;
+        ADD_PARAM_NODE(id_idx);
+        // trailing slash already consumed at loop start
+    }
+
+    // After parameters parsed assign to func_node.right_idx
+    p->nodes[func_node].data.binary.right_idx = param_start;
+
+    #undef ADD_PARAM_NODE
+    // -----------------------------------------------------------
     
     // Look for < to open function body
     print_str("[PARSER] Looking for < to open function body, current token: ");
@@ -2086,8 +2154,202 @@ static uint16_t parse_timeline_def(Parser* p) {
     return timeline_node;
 }
 
+// Parse while loop: f.whl-[condition]/
+static uint16_t parse_while_loop(Parser* p) {
+    advance(p); // consume f.whl
+    
+    uint16_t while_node = alloc_node(p, NODE_WHILE_LOOP);
+    if (while_node == 0) return 0;
+    
+    // Expect '-' after f.whl
+    if (!match(p, TOK_MINUS)) {
+        print_str("[PARSER] ERROR: Expected '-' after f.whl\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect '[' to start condition
+    if (!match(p, TOK_BRACKET_OPEN)) {
+        print_str("[PARSER] ERROR: Expected '[' after f.whl-\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse condition expression
+    uint16_t condition = parse_expression(p);
+    p->nodes[while_node].data.while_loop.condition_idx = condition;
+    
+    // Expect ']' to close condition
+    if (!match(p, TOK_BRACKET_CLOSE)) {
+        print_str("[PARSER] ERROR: Expected ']' after while condition\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect '/' to start body
+    if (!match(p, TOK_DIV)) {
+        print_str("[PARSER] ERROR: Expected '/' after while condition\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse body statements until standalone '\\'
+    uint16_t body_start = 0;
+    uint16_t body_end = 0;
+    
+    while (!at_end(p)) {
+        // Check if we've reached a standalone backslash (loop terminator)
+        if (check(p, TOK_BACKSLASH)) {
+            break;
+        }
+        
+        uint16_t stmt = parse_statement(p);
+        if (stmt == 0) {
+            break;
+        }
+        
+        if (body_start == 0) {
+            body_start = stmt;
+            body_end = stmt;
+        } else {
+            // Chain statements together
+            p->nodes[body_end].data.binary.right_idx = stmt;
+            body_end = stmt;
+        }
+    }
+    
+    // Expect '\\' to end body
+    if (!match(p, TOK_BACKSLASH)) {
+        print_str("[PARSER] ERROR: Expected '\\' after while body\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[while_node].data.while_loop.body_idx = body_start;
+    return while_node;
+}
+
+// Parse for loop: f.for-[init]-[condition]-[increment]/
+static uint16_t parse_for_loop(Parser* p) {
+    advance(p); // consume f.for
+    
+    uint16_t for_node = alloc_node(p, NODE_FOR_LOOP);
+    if (for_node == 0) return 0;
+    
+    // Expect '-' after f.for
+    if (!match(p, TOK_MINUS)) {
+        print_str("[PARSER] ERROR: Expected '-' after f.for\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse initialization: [init]
+    if (!match(p, TOK_BRACKET_OPEN)) {
+        print_str("[PARSER] ERROR: Expected '[' after f.for-\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    uint16_t init = parse_statement(p);
+    p->nodes[for_node].data.for_loop.init_idx = init;
+    
+    if (!match(p, TOK_BRACKET_CLOSE)) {
+        print_str("[PARSER] ERROR: Expected ']' after for init\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect '-' separator
+    if (!match(p, TOK_MINUS)) {
+        print_str("[PARSER] ERROR: Expected '-' after for init\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse condition: [condition]
+    if (!match(p, TOK_BRACKET_OPEN)) {
+        print_str("[PARSER] ERROR: Expected '[' after for init-\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    uint16_t condition = parse_expression(p);
+    p->nodes[for_node].data.for_loop.condition_idx = condition;
+    
+    if (!match(p, TOK_BRACKET_CLOSE)) {
+        print_str("[PARSER] ERROR: Expected ']' after for condition\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect '-' separator
+    if (!match(p, TOK_MINUS)) {
+        print_str("[PARSER] ERROR: Expected '-' after for condition\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse increment: [increment]
+    if (!match(p, TOK_BRACKET_OPEN)) {
+        print_str("[PARSER] ERROR: Expected '[' after for condition-\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    uint16_t increment = parse_expression(p);
+    p->nodes[for_node].data.for_loop.increment_idx = increment;
+    
+    if (!match(p, TOK_BRACKET_CLOSE)) {
+        print_str("[PARSER] ERROR: Expected ']' after for increment\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect '/' to start body
+    if (!match(p, TOK_DIV)) {
+        print_str("[PARSER] ERROR: Expected '/' after for parameters\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse body statements until standalone '\\'
+    uint16_t body_start = 0;
+    uint16_t body_end = 0;
+    
+    while (!at_end(p)) {
+        // Check if we've reached a standalone backslash (loop terminator)
+        if (check(p, TOK_BACKSLASH)) {
+            // Peek ahead to see if this is a standalone backslash
+            // (not part of a statement that was already parsed)
+            break;
+        }
+        
+        uint16_t stmt = parse_statement(p);
+        if (stmt == 0) break;
+        
+        if (body_start == 0) {
+            body_start = stmt;
+            body_end = stmt;
+        } else {
+            // Chain statements together
+            p->nodes[body_end].data.binary.right_idx = stmt;
+            body_end = stmt;
+        }
+    }
+    
+    // Expect '\\' to end body
+    if (!match(p, TOK_BACKSLASH)) {
+        print_str("[PARSER] ERROR: Expected '\\' after for body\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[for_node].data.for_loop.body_idx = body_start;
+    return for_node;
+}
+
 static uint16_t parse_conditional(Parser* p) {
-    // Advance the conditional token (f.if, f.ens, etc.)
+    // Advance the conditional token (if, while, etc.)
     Token* cond_tok = advance(p);
     
     uint16_t cond_node = alloc_node(p, NODE_CONDITIONAL);
@@ -2096,53 +2358,132 @@ static uint16_t parse_conditional(Parser* p) {
     // Store the conditional type
     p->nodes[cond_node].data.binary.op = cond_tok->type;
     
-    // Parse parameter if present /{@param:name} or just /expression
-    if (match(p, TOK_SLASH)) {
-        // Check for parameter syntax
-        if (check(p, TOK_LBRACE) || check(p, TOK_PARAM)) {
-            // Skip parameter parsing for now
-            while (!at_end(p) && !check(p, TOK_STAR) && !check(p, TOK_GT) && 
-                   !check(p, TOK_LT) && !check(p, TOK_EQUALS)) {
-                advance(p);
+    print_str("[PARSER] parse_conditional: type=");
+    print_num(cond_tok->type);
+    print_str("\n");
+    
+    // Expect '/' after conditional keyword
+    if (!match(p, TOK_DIV)) {
+        print_str("[PARSER] ERROR: Expected '/' after conditional keyword\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse the condition expression
+    uint16_t condition = parse_expression(p);
+    p->nodes[cond_node].data.binary.left_idx = condition;
+    
+    print_str("[PARSER] parse_conditional: condition parsed, node=");
+    print_num(condition);
+    print_str("\n");
+    
+    // Expect '<' to start the body
+    print_str("[PARSER] About to match TOK_LT, current position=");
+    print_num(p->current);
+    print_str(" total_tokens=");
+    print_num(p->count);
+    if (p->current < p->count) {
+        print_str(" current_token_type=");
+        print_num(p->tokens[p->current].type);
+        print_str(" current_token_text='");
+        Token* cur_tok = &p->tokens[p->current];
+        for (uint32_t i = 0; i < cur_tok->len && i < 10; i++) {
+            char c = p->source[cur_tok->start + i];
+            if (c >= 32 && c <= 126) {
+                char buf[2] = {c, '\0'};
+                print_str(buf);
+            } else {
+                print_str("?");
             }
-        } else {
-            // Parse the condition expression
-            uint16_t condition = parse_expression(p);
-            p->nodes[cond_node].data.binary.left_idx = condition;
         }
+        print_str("'");
+    }
+    print_str("\n");
+    
+    if (!match(p, TOK_LT)) {
+        print_str("[PARSER] ERROR: Expected '<' after condition\n");
+        p->has_error = true;
+        return 0;
     }
     
-    // Handle the comparison and then clause
-    uint16_t then_start = 0;
-    uint16_t then_end = 0;
+    // Parse the body statements until we hit ':>'
+    uint16_t body_start = 0;
+    uint16_t body_end = 0;
     
-    // Parse until we hit \>| (end of conditional)
-    while (!at_end(p) && !check(p, TOK_BACKSLASH)) {
-        if (check(p, TOK_CONNECTOR_FWD)) {
-            advance(p); // consume \>|
-            break;
-        }
-        
-        // Parse statements in the then clause
+    while (!at_end(p) && !check(p, TOK_BLOCK_END)) {
         uint16_t stmt = parse_statement(p);
-        if (then_start == 0) {
-            then_start = stmt;
-            p->nodes[cond_node].data.binary.right_idx = then_start;
-        }
+        if (stmt == 0) break;
         
-        // Chain statements
-        if (then_end != 0 && then_end < p->node_capacity) {
-            p->nodes[then_end].data.binary.right_idx = stmt;
+        if (body_start == 0) {
+            body_start = stmt;
+        } else if (body_end != 0) {
+            // Chain statements together
+            p->nodes[body_end].data.binary.right_idx = stmt;
         }
-        then_end = stmt;
+        body_end = stmt;
     }
     
-    // Consume ending backslash if present
-    if (match(p, TOK_BACKSLASH)) {
-        // Check for connector after backslash
-        if (match(p, TOK_GT) && match(p, TOK_PIPE)) {
-            // This is \>| pattern
+    // Store the body in the conditional node
+    p->nodes[cond_node].data.binary.right_idx = body_start;
+    
+    // Expect ':>' to end the block
+    if (!match(p, TOK_BLOCK_END)) {
+        print_str("[PARSER] ERROR: Expected ':>' to end conditional block\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    print_str("[PARSER] parse_conditional: body parsed successfully\n");
+    
+    // Check for 'else' clause (only for if statements)
+    if (cond_tok->type == TOK_COND_IF && check(p, TOK_ELSE)) {
+        print_str("[PARSER] parse_conditional: found else clause\n");
+        advance(p); // consume 'else'
+        
+        // Expect '<' to start else body
+        if (!match(p, TOK_LT)) {
+            print_str("[PARSER] ERROR: Expected '<' after else\n");
+            p->has_error = true;
+            return 0;
         }
+        
+        // Create an else node and chain it
+        uint16_t else_node = alloc_node(p, NODE_CONDITIONAL);
+        if (else_node == 0) return 0;
+        
+        p->nodes[else_node].data.binary.op = TOK_ELSE;
+        p->nodes[else_node].data.binary.left_idx = 0; // No condition for else
+        
+        // Parse else body
+        uint16_t else_body_start = 0;
+        uint16_t else_body_end = 0;
+        
+        while (!at_end(p) && !check(p, TOK_BLOCK_END)) {
+            uint16_t stmt = parse_statement(p);
+            if (stmt == 0) break;
+            
+            if (else_body_start == 0) {
+                else_body_start = stmt;
+            } else if (else_body_end != 0) {
+                p->nodes[else_body_end].data.binary.right_idx = stmt;
+            }
+            else_body_end = stmt;
+        }
+        
+        p->nodes[else_node].data.binary.right_idx = else_body_start;
+        
+        // Expect ':>' to end the else block
+        if (!match(p, TOK_BLOCK_END)) {
+            print_str("[PARSER] ERROR: Expected ':>' to end else block\n");
+            p->has_error = true;
+            return 0;
+        }
+        
+        print_str("[PARSER] parse_conditional: else body parsed successfully\n");
+        
+        // Chain the else node to the if node using a special field
+        // We'll use the upper bits of left_idx to store the else clause
+        p->nodes[cond_node].data.timing.temporal_offset = else_node;
     }
     
     return cond_node;
@@ -2265,12 +2606,22 @@ static uint16_t parse_statement(Parser* p) {
         return parse_action_block(p);
     }
     
-    // Conditional - check for all conditional tokens
+    // While loop
+    if (check(p, TOK_COND_WHL)) {
+        return parse_while_loop(p);
+    }
+    
+    // For loop
+    if (check(p, TOK_COND_FOR)) {
+        return parse_for_loop(p);
+    }
+    
+    // Conditional - check for all other conditional tokens
     if (check(p, TOK_FUNC_CAN) || check(p, TOK_COND_IF) || 
         check(p, TOK_COND_ENS) || check(p, TOK_COND_VER) ||
         check(p, TOK_COND_CHK) || check(p, TOK_COND_TRY) ||
         check(p, TOK_COND_GRD) || check(p, TOK_COND_UNL) ||
-        check(p, TOK_COND_WHL) || check(p, TOK_COND_UNT)) {
+        check(p, TOK_COND_UNT)) {
         return parse_conditional(p);
     }
     
@@ -2477,7 +2828,7 @@ static uint16_t parse_statement(Parser* p) {
             advance(p);
         }
         
-        // Parse content - handle string that may be tokenized as separate parts
+        // Parse content - handle different content types
         if (check(p, TOK_STRING)) {
             // Parse string normally if it's a single token
             Token* str_tok = advance(p);
@@ -2495,10 +2846,10 @@ static uint16_t parse_statement(Parser* p) {
             print_str(" for print statement\n");
             
             p->nodes[output_node].data.output.content_idx = str_node;
-        } else if (check(p, TOK_STRING) || (check(p, TOK_IDENTIFIER) || check(p, TOK_VAR) || 
+        } else if (check(p, TOK_IDENTIFIER) || check(p, TOK_VAR) || 
             check(p, TOK_VAR_INT) || check(p, TOK_VAR_FLOAT) || 
             check(p, TOK_VAR_STRING) || check(p, TOK_VAR_BOOL) || 
-            check(p, TOK_CONST))) {
+            check(p, TOK_CONST)) {
             // Parse identifier or variable reference
             Token* tok = advance(p);
             uint16_t id_node = alloc_node(p, NODE_IDENTIFIER);
@@ -2600,6 +2951,35 @@ static uint16_t parse_statement(Parser* p) {
         p->nodes[output_node].data.output.next_output = 0;
         
         return output_node;
+    }
+    
+    // Return statement (return/ expr \)
+    if (check(p, TOK_RETURN)) {
+        advance(p); // consume return/
+        // Consume optional slash token if lexer split it
+        if (check(p, TOK_SLASH) || check(p, TOK_DIV)) {
+            advance(p);
+        }
+        
+        uint16_t expr_node = 0;
+        // If the next token is not a backslash, parse the return expression
+        if (!check(p, TOK_BACKSLASH)) {
+            expr_node = parse_expression(p);
+        }
+        
+        // Require terminating backslash
+        if (!check(p, TOK_BACKSLASH)) {
+            p->has_error = true;
+            print_str("[PARSER] ERROR: Return statement requires closing backslash\n");
+            return 0;
+        }
+        advance(p); // consume backslash
+        
+        // Create NODE_RETURN and store expression index
+        uint16_t ret_node = alloc_node(p, NODE_RETURN);
+        if (ret_node == 0) return 0;
+        p->nodes[ret_node].data.binary.left_idx = expr_node; // expression (can be 0)
+        return ret_node;
     }
     
     // Inline assembly
@@ -2911,13 +3291,20 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
                     parser.nodes[program_node].data.binary.left_idx = stmt;
                     first_stmt = stmt;
                     print_str("[PARSER] Set as first statement\n");
-                } else if (last_stmt != 0 && last_stmt < parser.node_count) {
+                            } else if (last_stmt != 0 && last_stmt < parser.node_count) {
+                // Don't link to conditional nodes - they use right_idx for body
+                if (parser.nodes[last_stmt].type != NODE_CONDITIONAL && parser.nodes[last_stmt].type != NODE_FUNC_DEF) {
                     parser.nodes[last_stmt].data.binary.right_idx = stmt;
                     print_str("[PARSER] Linked to previous statement ");
                     print_num(last_stmt);
                     print_str("\n");
-                    
-                                    // Update program node's right_idx to point to the last statement in the chain
+                } else {
+                    print_str("[PARSER] Skipping link to conditional node ");
+                    print_num(last_stmt);
+                    print_str(" (preserving body reference)\n");
+                }
+                
+                // Update program node's right_idx to point to the last statement in the chain
                 parser.nodes[program_node].data.binary.right_idx = stmt;
                 print_str("[PARSER] Updated program right_idx to last statement ");
                 print_num(stmt);
@@ -2964,10 +3351,17 @@ uint16_t parse_blaze(Token* tokens, uint32_t count, ASTNode* node_pool,
                 first_stmt = stmt;
                 print_str("[PARSER] Set as first statement\n");
             } else if (last_stmt != 0 && last_stmt < parser.node_count) {
-                parser.nodes[last_stmt].data.binary.right_idx = stmt;
-                print_str("[PARSER] Linked to previous statement ");
-                print_num(last_stmt);
-                print_str("\n");
+                // Don't link to conditional nodes - they use right_idx for body
+                if (parser.nodes[last_stmt].type != NODE_CONDITIONAL && parser.nodes[last_stmt].type != NODE_FUNC_DEF) {
+                    parser.nodes[last_stmt].data.binary.right_idx = stmt;
+                    print_str("[PARSER] Linked to previous statement ");
+                    print_num(last_stmt);
+                    print_str("\n");
+                } else {
+                    print_str("[PARSER] Skipping link to conditional node ");
+                    print_num(last_stmt);
+                    print_str(" (preserving body reference)\n");
+                }
                 
                 // Update program node's right_idx to point to the last statement in the chain
                 parser.nodes[program_node].data.binary.right_idx = stmt;
