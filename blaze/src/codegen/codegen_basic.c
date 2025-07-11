@@ -937,6 +937,7 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                     break;
                     
                 // Comparison operators - set flags and use SETcc
+                case TOK_LT:
                 case TOK_LT_CMP:
                     emit_cmp_reg_reg(buf, RAX, RDX);
                     emit_byte(buf, 0x0F); // SETL
@@ -1694,10 +1695,22 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                 emit_je_rel32(buf, 0); // We'll patch this offset later
                 uint32_t exit_jump_pos = buf->position - 4; // Remember where to patch
                 
-                // Generate loop body
+                // Generate loop body - follow statement chain
                 uint16_t body_idx = stmt_node->data.while_loop.body_idx;
                 if (body_idx != 0) {
-                    generate_statement(buf, nodes, body_idx, symbols, string_pool);
+                    uint16_t current_stmt = body_idx;
+                    while (current_stmt != 0 && current_stmt < 4096) {
+                        generate_statement(buf, nodes, current_stmt, symbols, string_pool);
+                        // Move to next statement in chain
+                        ASTNode* current_node = &nodes[current_stmt];
+                        if (current_node->type == NODE_BINARY_OP || current_node->type == NODE_OUTPUT || 
+                            current_node->type == NODE_IDENTIFIER || current_node->type == NODE_NUMBER || 
+                            current_node->type == NODE_FLOAT || current_node->type == NODE_VAR_DEF) {
+                            current_stmt = current_node->data.binary.right_idx;
+                        } else {
+                            break; // End of chain
+                        }
+                    }
                 }
                 
                 // Jump back to condition check
@@ -1742,10 +1755,22 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                 emit_je_rel32(buf, 0); // We'll patch this offset later
                 uint32_t exit_jump_pos = buf->position - 4; // Remember where to patch
                 
-                // Generate loop body
+                // Generate loop body - follow statement chain
                 uint16_t body_idx = stmt_node->data.for_loop.body_idx;
                 if (body_idx != 0) {
-                    generate_statement(buf, nodes, body_idx, symbols, string_pool);
+                    uint16_t current_stmt = body_idx;
+                    while (current_stmt != 0 && current_stmt < 4096) {
+                        generate_statement(buf, nodes, current_stmt, symbols, string_pool);
+                        // Move to next statement in chain
+                        ASTNode* current_node = &nodes[current_stmt];
+                        if (current_node->type == NODE_BINARY_OP || current_node->type == NODE_OUTPUT || 
+                            current_node->type == NODE_IDENTIFIER || current_node->type == NODE_NUMBER || 
+                            current_node->type == NODE_FLOAT || current_node->type == NODE_VAR_DEF) {
+                            current_stmt = current_node->data.binary.right_idx;
+                        } else {
+                            break; // End of chain
+                        }
+                    }
                 }
                 
                 // Generate increment
