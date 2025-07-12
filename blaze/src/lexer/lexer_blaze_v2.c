@@ -150,7 +150,10 @@ static uint32_t parse_identifier(const char* input, uint32_t pos, uint32_t len, 
         tok->type = TOK_COND_IF;
     } else if (word_len == 5 && match_string(input, start, len, "while")) {
         // Direct while keyword  
-        tok->type = TOK_COND_WHL;
+        tok->type = TOK_WHILE;
+    } else if (word_len == 3 && match_string(input, start, len, "for")) {
+        // Direct for keyword
+        tok->type = TOK_FOR;
     } else if (word_len == 4 && match_string(input, start, len, "else")) {
         // Direct else keyword
         tok->type = TOK_ELSE;
@@ -1105,6 +1108,14 @@ uint32_t lex_blaze(const char* input, uint32_t len, Token* output) {
                     token_count++;
                     continue;
                 case '=':
+                    // Check for ==
+                    if (pos + 1 < len && input[pos + 1] == '=') {
+                        tok->type = TOK_EQ;
+                        tok->len = 2;
+                        pos += 2;
+                        token_count++;
+                        continue;
+                    }
                     tok->type = TOK_EQUALS;
                     tok->len = 1;
                     pos++;

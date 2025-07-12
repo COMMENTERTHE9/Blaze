@@ -248,6 +248,8 @@ typedef enum {
     TOK_COND_IF,         // f.if or fucn.if
     TOK_COND_WHL,        // f.whl or fucn.whl
     TOK_COND_FOR,        // f.for or fucn.for
+    TOK_WHILE,           // while keyword
+    TOK_FOR,             // for keyword
     TOK_COND_UNT,        // f.unt or fucn.unt
     TOK_COND_OBS,        // f.obs or fucn.obs
     TOK_COND_DET,        // f.det or fucn.det

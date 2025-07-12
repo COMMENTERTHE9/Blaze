@@ -2154,30 +2154,76 @@ static uint16_t parse_timeline_def(Parser* p) {
     return timeline_node;
 }
 
+// Helper function to parse a bracketed section with nested bracket support
+static uint16_t parse_bracketed_section(Parser* p, bool is_statement) {
+    if (!match(p, TOK_BRACKET_OPEN)) {
+        return 0;
+    }
+    
+    // Count nested brackets to find the matching close bracket
+    int bracket_depth = 1;
+    uint32_t section_start = p->current;
+    
+    while (!at_end(p) && bracket_depth > 0) {
+        if (check(p, TOK_BRACKET_OPEN)) {
+            bracket_depth++;
+        } else if (check(p, TOK_BRACKET_CLOSE)) {
+            bracket_depth--;
+        }
+        
+        if (bracket_depth > 0) {
+            advance(p);
+        }
+    }
+    
+    if (bracket_depth > 0) {
+        print_str("[PARSER] ERROR: Unclosed bracket in for loop section\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Now parse the section between the brackets
+    uint32_t section_end = p->current;
+    uint32_t saved_current = p->current;
+    p->current = section_start;
+    
+    uint16_t result;
+    if (is_statement) {
+        result = parse_statement(p);
+    } else {
+        result = parse_expression(p);
+    }
+    
+    // Skip to after the closing bracket
+    p->current = section_end;
+    advance(p); // consume the closing bracket
+    
+    return result;
+}
+
 // Parse while loop: f.whl-[condition]/
 static uint16_t parse_while_loop(Parser* p) {
-    advance(p); // consume f.whl
+    advance(p); // consume while
     
     uint16_t while_node = alloc_node(p, NODE_WHILE_LOOP);
     if (while_node == 0) return 0;
     
-    // Expect '-' after f.whl
+    // Expect '-' after while
     if (!match(p, TOK_MINUS)) {
-        print_str("[PARSER] ERROR: Expected '-' after f.whl\n");
+        print_str("[PARSER] ERROR: Expected '-' after while\n");
         p->has_error = true;
         return 0;
     }
     
     // Expect '[' to start condition
     if (!match(p, TOK_BRACKET_OPEN)) {
-        print_str("[PARSER] ERROR: Expected '[' after f.whl-\n");
+        print_str("[PARSER] ERROR: Expected '[' after while-\n");
         p->has_error = true;
         return 0;
     }
     
     // Parse condition expression
     uint16_t condition = parse_expression(p);
-    p->nodes[while_node].data.while_loop.condition_idx = condition;
     
     // Expect ']' to close condition
     if (!match(p, TOK_BRACKET_CLOSE)) {
@@ -2185,6 +2231,8 @@ static uint16_t parse_while_loop(Parser* p) {
         p->has_error = true;
         return 0;
     }
+    
+    p->nodes[while_node].data.while_loop.condition_idx = condition;
     
     // Expect '/' to start body
     if (!match(p, TOK_DIV)) {
@@ -2197,26 +2245,52 @@ static uint16_t parse_while_loop(Parser* p) {
     uint16_t body_start = 0;
     uint16_t body_end = 0;
     
+    print_str("[WHILE] Starting body parsing, current token type=");
+    print_num(peek(p)->type);
+    print_str("\n");
+    
     while (!at_end(p)) {
         // Check if we've reached a standalone backslash (loop terminator)
         if (check(p, TOK_BACKSLASH)) {
+            print_str("[WHILE] Found backslash, ending body\n");
             break;
         }
         
+        print_str("[WHILE] Parsing body statement, token type=");
+        print_num(peek(p)->type);
+        print_str("\n");
+        
         uint16_t stmt = parse_statement(p);
         if (stmt == 0) {
+            print_str("[WHILE] parse_statement returned 0, breaking\n");
             break;
         }
+        
+        print_str("[WHILE] Got body statement: ");
+        print_num(stmt);
+        print_str("\n");
         
         if (body_start == 0) {
             body_start = stmt;
             body_end = stmt;
+            print_str("[WHILE] Set body_start=");
+            print_num(body_start);
+            print_str("\n");
         } else {
             // Chain statements together
+            print_str("[WHILE] Chaining statement ");
+            print_num(stmt);
+            print_str(" to ");
+            print_num(body_end);
+            print_str("\n");
             p->nodes[body_end].data.binary.right_idx = stmt;
             body_end = stmt;
         }
     }
+    
+    print_str("[WHILE] Body parsing complete, body_start=");
+    print_num(body_start);
+    print_str("\n");
     
     // Expect '\\' to end body
     if (!match(p, TOK_BACKSLASH)) {
@@ -2229,32 +2303,24 @@ static uint16_t parse_while_loop(Parser* p) {
     return while_node;
 }
 
-// Parse for loop: f.for-[init]-[condition]-[increment]/
+// Parse for loop: for-[init]-[condition]-[increment]/
 static uint16_t parse_for_loop(Parser* p) {
-    advance(p); // consume f.for
+    advance(p); // consume for
     
     uint16_t for_node = alloc_node(p, NODE_FOR_LOOP);
     if (for_node == 0) return 0;
     
-    // Expect '-' after f.for
+    // Expect '-' after for
     if (!match(p, TOK_MINUS)) {
-        print_str("[PARSER] ERROR: Expected '-' after f.for\n");
+        print_str("[PARSER] ERROR: Expected '-' after for\n");
         p->has_error = true;
         return 0;
     }
     
-    // Parse initialization: [init]
-    if (!match(p, TOK_BRACKET_OPEN)) {
-        print_str("[PARSER] ERROR: Expected '[' after f.for-\n");
-        p->has_error = true;
-        return 0;
-    }
-    
-    uint16_t init = parse_statement(p);
-    p->nodes[for_node].data.for_loop.init_idx = init;
-    
-    if (!match(p, TOK_BRACKET_CLOSE)) {
-        print_str("[PARSER] ERROR: Expected ']' after for init\n");
+    // Parse initialization: [init] - using helper for nested brackets
+    uint16_t init = parse_bracketed_section(p, true); // true = statement
+    if (init == 0) {
+        print_str("[PARSER] ERROR: Failed to parse for init section\n");
         p->has_error = true;
         return 0;
     }
@@ -2266,18 +2332,10 @@ static uint16_t parse_for_loop(Parser* p) {
         return 0;
     }
     
-    // Parse condition: [condition]
-    if (!match(p, TOK_BRACKET_OPEN)) {
-        print_str("[PARSER] ERROR: Expected '[' after for init-\n");
-        p->has_error = true;
-        return 0;
-    }
-    
-    uint16_t condition = parse_expression(p);
-    p->nodes[for_node].data.for_loop.condition_idx = condition;
-    
-    if (!match(p, TOK_BRACKET_CLOSE)) {
-        print_str("[PARSER] ERROR: Expected ']' after for condition\n");
+    // Parse condition: [condition] - using helper for nested brackets
+    uint16_t condition = parse_bracketed_section(p, false); // false = expression
+    if (condition == 0) {
+        print_str("[PARSER] ERROR: Failed to parse for condition section\n");
         p->has_error = true;
         return 0;
     }
@@ -2289,21 +2347,17 @@ static uint16_t parse_for_loop(Parser* p) {
         return 0;
     }
     
-    // Parse increment: [increment]
-    if (!match(p, TOK_BRACKET_OPEN)) {
-        print_str("[PARSER] ERROR: Expected '[' after for condition-\n");
+    // Parse increment: [increment] - using helper for nested brackets
+    uint16_t increment = parse_bracketed_section(p, true); // true = statement (for var assignment)
+    if (increment == 0) {
+        print_str("[PARSER] ERROR: Failed to parse for increment section\n");
         p->has_error = true;
         return 0;
     }
     
-    uint16_t increment = parse_expression(p);
+    p->nodes[for_node].data.for_loop.init_idx = init;
+    p->nodes[for_node].data.for_loop.condition_idx = condition;
     p->nodes[for_node].data.for_loop.increment_idx = increment;
-    
-    if (!match(p, TOK_BRACKET_CLOSE)) {
-        print_str("[PARSER] ERROR: Expected ']' after for increment\n");
-        p->has_error = true;
-        return 0;
-    }
     
     // Expect '/' to start body
     if (!match(p, TOK_DIV)) {
