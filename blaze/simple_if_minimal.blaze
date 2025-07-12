@@ -1,0 +1,7 @@
+## Minimal if test
+var.i-x-[5]
+var.i-y-[0]
+
+if/ x > 3 <
+    y = 7
+:> 

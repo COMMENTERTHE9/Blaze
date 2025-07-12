@@ -1,0 +1,17 @@
+## 🎉 Working If Statement Demo! 
+
+var.i-age-[25]
+var.i-score-[85]
+
+print/ "Age: " \
+print/ age \
+print/ "Score: " \
+print/ score \
+
+if/ age >= 18 <
+    print/ "You are an adult!" \
+    score = score + 10
+:>
+
+print/ "Final score: " \
+print/ score \

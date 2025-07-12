@@ -949,6 +949,7 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
                     emit_byte(buf, 0xC0);
                     break;
                     
+                case TOK_GT:        // Handle > as comparison operator
                 case TOK_GT_CMP:
                     emit_cmp_reg_reg(buf, RAX, RDX);
                     emit_byte(buf, 0x0F); // SETG

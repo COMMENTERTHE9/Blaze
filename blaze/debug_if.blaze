@@ -1,0 +1,11 @@
+## Debug if statement
+var.i-x-[7]
+
+print/ "x value is 7" \
+print/ "Testing 7 > 3" \
+
+if/ x > 3 <
+    print/ "SUCCESS: x is greater than 3!" \
+:>
+
+print/ "After if statement" \ 

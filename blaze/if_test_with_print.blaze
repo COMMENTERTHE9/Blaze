@@ -1,0 +1,10 @@
+## If statement with print test
+var.i-x-[5]
+
+print/ "Testing if statement" \
+
+if/ x > 3 <
+    print/ "x is greater than 3!" \
+:>
+
+print/ "Done testing" \ 

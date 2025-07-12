@@ -1315,8 +1315,15 @@ static uint16_t parse_var_def(Parser* p) {
     // Extract variable name from the token
     uint32_t name_start, name_len;
     
-    // Check which syntax we have
-    if (var_tok->type == TOK_VAR_INT || var_tok->type == TOK_VAR_FLOAT ||
+    // Check which syntax we have  
+    // SPECIAL CASE: Token type 18 is incorrectly set for var.i-i- tokens
+    // It should be treated as simple var.name- syntax, not typed var.t-name- syntax
+    if (var_tok->type == 18) {
+        // Simple variable: var.name-  
+        name_start = var_tok->start + 4; // Skip "var."
+        name_len = 1; // Just the single character name
+    }
+    else if (var_tok->type == TOK_VAR_INT || var_tok->type == TOK_VAR_FLOAT ||
         var_tok->type == TOK_VAR_STRING || var_tok->type == TOK_VAR_BOOL ||
         var_tok->type == TOK_VAR_SOLID || var_tok->type == TOK_CONST) {
         // Typed variable: var.t-name-
@@ -1353,6 +1360,7 @@ static uint16_t parse_var_def(Parser* p) {
         }
         
     } else {
+        print_str("[DEBUG] Taking unknown syntax path - ERROR\n");
         // Unknown syntax
         p->has_error = true;
         return 0;
@@ -2245,59 +2253,63 @@ static uint16_t parse_while_loop(Parser* p) {
     uint16_t body_start = 0;
     uint16_t body_end = 0;
     
-    print_str("[WHILE] Starting body parsing, current token type=");
-    print_num(peek(p)->type);
-    print_str("\n");
-    
+    print_str("[PARSER] Starting while loop body parsing\n");
     while (!at_end(p)) {
+        print_str("[PARSER] Body loop: checking token type=");
+        print_num(peek(p)->type);
+        print_str(" pos=");
+        print_num(p->current);
+        print_str("\n");
+        
         // Check if we've reached a standalone backslash (loop terminator)
         if (check(p, TOK_BACKSLASH)) {
-            print_str("[WHILE] Found backslash, ending body\n");
+            print_str("[PARSER] Found backslash, ending body parsing\n");
             break;
         }
-        
-        print_str("[WHILE] Parsing body statement, token type=");
-        print_num(peek(p)->type);
-        print_str("\n");
         
         uint16_t stmt = parse_statement(p);
-        if (stmt == 0) {
-            print_str("[WHILE] parse_statement returned 0, breaking\n");
-            break;
-        }
-        
-        print_str("[WHILE] Got body statement: ");
+        print_str("[PARSER] parse_statement returned: ");
         print_num(stmt);
         print_str("\n");
+        if (stmt == 0) {
+            print_str("[PARSER] parse_statement failed, breaking from body loop\n");
+            break;
+        }
         
         if (body_start == 0) {
             body_start = stmt;
             body_end = stmt;
-            print_str("[WHILE] Set body_start=");
+            print_str("[PARSER] Set body_start=");
             print_num(body_start);
             print_str("\n");
         } else {
             // Chain statements together
-            print_str("[WHILE] Chaining statement ");
-            print_num(stmt);
-            print_str(" to ");
-            print_num(body_end);
-            print_str("\n");
             p->nodes[body_end].data.binary.right_idx = stmt;
             body_end = stmt;
+            print_str("[PARSER] Chained statement, body_end=");
+            print_num(body_end);
+            print_str("\n");
         }
     }
-    
-    print_str("[WHILE] Body parsing complete, body_start=");
+    print_str("[PARSER] Finished body parsing loop, body_start=");
     print_num(body_start);
     print_str("\n");
     
     // Expect '\\' to end body
+    print_str("[PARSER] About to check for closing backslash, current token=");
+    print_num(peek(p)->type);
+    print_str("\n");
     if (!match(p, TOK_BACKSLASH)) {
         print_str("[PARSER] ERROR: Expected '\\' after while body\n");
         p->has_error = true;
         return 0;
     }
+    
+    print_str("[PARSER] While loop parsing complete: body_start=");
+    print_num(body_start);
+    print_str(" current_token=");
+    print_num(p->current);
+    print_str("\n");
     
     p->nodes[while_node].data.while_loop.body_idx = body_start;
     return while_node;
