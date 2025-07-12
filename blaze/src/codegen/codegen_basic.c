@@ -1679,12 +1679,21 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
             print_num(stmt_idx);
             print_str("\n");
             
+            // Check condition and body indices
+            uint16_t condition_idx = stmt_node->data.while_loop.condition_idx;
+            uint16_t body_idx = stmt_node->data.while_loop.body_idx;
+            print_str("[WHILE] condition_idx=");
+            print_num(condition_idx);
+            print_str(" body_idx=");
+            print_num(body_idx);
+            print_str("\n");
+            
             // Label for loop start
             uint32_t loop_start = buf->position;
             
             // Generate condition check
-            uint16_t condition_idx = stmt_node->data.while_loop.condition_idx;
             if (condition_idx != 0) {
+                print_str("[WHILE] Generating condition expression\n");
                 generate_expression(buf, nodes, condition_idx, symbols, string_pool);
                 
                 // Test result in RAX
@@ -1696,18 +1705,26 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                 uint32_t exit_jump_pos = buf->position - 4; // Remember where to patch
                 
                 // Generate loop body - follow statement chain
-                uint16_t body_idx = stmt_node->data.while_loop.body_idx;
                 if (body_idx != 0) {
                     uint16_t current_stmt = body_idx;
                     while (current_stmt != 0 && current_stmt < 4096) {
+                        print_str("[WHILE] Generating body statement at idx=");
+                        print_num(current_stmt);
+                        print_str("\n");
                         generate_statement(buf, nodes, current_stmt, symbols, string_pool);
+                        
                         // Move to next statement in chain
                         ASTNode* current_node = &nodes[current_stmt];
                         if (current_node->type == NODE_BINARY_OP || current_node->type == NODE_OUTPUT || 
                             current_node->type == NODE_IDENTIFIER || current_node->type == NODE_NUMBER || 
-                            current_node->type == NODE_FLOAT || current_node->type == NODE_VAR_DEF) {
+                            current_node->type == NODE_FLOAT || current_node->type == NODE_VAR_DEF ||
+                            current_node->type == NODE_WHILE_LOOP || current_node->type == NODE_FOR_LOOP) {
                             current_stmt = current_node->data.binary.right_idx;
+                            print_str("[WHILE] Next statement in chain: ");
+                            print_num(current_stmt);
+                            print_str("\n");
                         } else {
+                            print_str("[WHILE] End of statement chain\n");
                             break; // End of chain
                         }
                     }
@@ -1723,6 +1740,8 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                 buf->code[exit_jump_pos + 1] = (exit_offset >> 8) & 0xFF;
                 buf->code[exit_jump_pos + 2] = (exit_offset >> 16) & 0xFF;
                 buf->code[exit_jump_pos + 3] = (exit_offset >> 24) & 0xFF;
+                
+                print_str("[WHILE] Loop generation complete\n");
             }
             break;
         }
