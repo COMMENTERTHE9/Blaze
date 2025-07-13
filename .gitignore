@@ -1,3 +1,42 @@
 GEMINI.md
 test_conditional.blaze
 test_simple.blaze
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dll
+*.exe
+*.bin
+
+# Logs and debug files
+*.log
+*_output.txt
+*_debug.txt
+debug_*.txt
+compilation_output.txt
+
+# Temporary files
+*_output
+*_test
+*_debug
+*_fixed
+*_new
+*_final
+*_working
+
+# Platform-specific build directories
+build/
+obj/
+*.dSYM/
+
+# IDE files
+*.iml
+.vscode/
+.idea/
+
+# Runtime generated files
+test_output*
+simple_*_test
+simple_*_output
