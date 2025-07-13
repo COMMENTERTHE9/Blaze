@@ -1,0 +1,19 @@
+## Test switch/case statements in Blaze
+
+var.i-x-[2]/
+
+switch (x) {
+    case 1:
+        print/ "x is one" \
+        break;
+    case 2: 
+        print/ "x is two" \
+        break;
+    case 3:
+        print/ "x is three" \
+        break;
+    default:
+        print/ "x is something else" \
+}
+
+print/ "Switch test completed" \

@@ -1,0 +1,79 @@
+## Blaze Syntax Comparison: Traditional vs Function Prefix Forms
+
+var.i-x-[0]/
+var.i-y-[2]/
+
+# TRADITIONAL SYNTAX (RECOMMENDED)
+
+# Traditional while loop
+while (x < 3) {
+    print/ "Traditional while: " \
+    txt/ x \
+    print/ "\n" \
+    var.i-x-[x + 1]
+}
+
+# Traditional for loop  
+for (var.i-i-[0]; i < 3; var.i-i-[i + 1]) {
+    print/ "Traditional for: " \
+    txt/ i \
+    print/ "\n" \
+}
+
+# Traditional if-else
+if (x == 3) {
+    print/ "Traditional if: x equals 3\n" \
+} else {
+    print/ "Traditional else: x does not equal 3\n" \
+}
+
+# Traditional switch (NEW!)
+switch (y) {
+    case 1:
+        print/ "Traditional switch: y is one\n" \
+        break;
+    case 2:
+        print/ "Traditional switch: y is two\n" \ 
+        break;
+    default:
+        print/ "Traditional switch: y is something else\n" \
+}
+
+# Short form switch (NEW!)
+swt (y) {
+    case 1:
+        print/ "Short switch: y is one\n" \
+        break;
+    case 2:
+        print/ "Short switch: y is two\n" \
+        break;
+    default:
+        print/ "Short switch: y is something else\n" \
+}
+
+# FUNCTION PREFIX SYNTAX (ADVANCED/OPTIONAL)
+# These provide additional capabilities for complex control flow
+
+var.i-z-[0]/
+
+# Function prefix while
+f.whl-[z < 2]/
+    print/ "Function while: " \
+    txt/ z \
+    print/ "\n" \
+    var.i-z-[z + 1]
+\
+
+# Function prefix for
+f.for-[var.i-j-[0]]-[j < 2]-[var.i-j-[j + 1]]/
+    print/ "Function for: " \
+    txt/ j \
+    print/ "\n" \
+\
+
+# Function prefix if
+f.if-[y == 2]/
+    print/ "Function if: y equals 2\n" \
+\
+
+print/ "Syntax comparison completed!\n" \

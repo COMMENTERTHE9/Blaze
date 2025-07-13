@@ -396,6 +396,13 @@ typedef enum {
     TOK_BREAK,           // break (loop control)
     TOK_CONTINUE,        // continue (loop control)
     
+    // Switch/Case statements
+    TOK_BLAZESWT,        // swt or switch (switch statement)
+    TOK_CASE,            // case
+    TOK_INCASE,          // incase (nested switch)
+    TOK_DEFAULT,         // default
+    TOK_SWITCH_END_NESTED, // \/ (end nested incase block)
+    
     // Control
     TOK_EOF,
     TOK_ERROR,
@@ -516,11 +523,18 @@ typedef enum {
     NODE_UNDEFINED,
     NODE_VOID,
     NODE_TYPEDEF,
-    NODE_CONST_VAR
+    NODE_CONST_VAR,
+    
+    // Switch/Case nodes
+    NODE_SWITCH,
+    NODE_CASE,
+    NODE_INCASE,
+    NODE_DEFAULT,
+    NODE_CASE_LIST
 } NodeType;
 
 // Define the maximum node type value
-#define NODE_TYPE_MAX (NODE_CONST_VAR + 1)
+#define NODE_TYPE_MAX (NODE_CASE_LIST + 1)
 
 // AST Node - compact representation
 typedef struct ASTNode {
@@ -672,6 +686,38 @@ typedef struct ASTNode {
             uint16_t var_def_idx;       // Reference to variable definition
             bool is_immutable;          // true for immutable, false for const
         } const_var;
+        
+        // Switch statement
+        struct {
+            uint16_t var_idx;           // Variable to switch on
+            uint16_t case_list_idx;     // Index to case list node
+        } switch_stmt;
+        
+        // Case statement
+        struct {
+            uint16_t value_idx;         // Value to match
+            uint16_t action_list_idx;   // Actions to execute
+            uint16_t next_case_idx;     // Next case in the list (0 = none)
+            uint16_t incase_idx;        // Nested incase (0 = none)
+        } case_stmt;
+        
+        // Incase statement (nested switch)
+        struct {
+            uint16_t var_idx;           // Variable to switch on
+            uint16_t case_list_idx;     // Index to nested case list
+        } incase_stmt;
+        
+        // Default case
+        struct {
+            uint16_t action_list_idx;   // Actions to execute
+        } default_case;
+        
+        // Case list (collection of cases)
+        struct {
+            uint16_t first_case_idx;    // First case in the list
+            uint16_t case_count;        // Number of cases
+            uint16_t default_idx;       // Default case (0 = none)
+        } case_list;
     } data;
 } ASTNode;
 

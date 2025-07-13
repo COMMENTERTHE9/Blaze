@@ -46,6 +46,9 @@ static uint16_t parse_gggx_generic_command(Parser* p);
 static uint16_t parse_typedef_def(Parser* p);
 static uint16_t parse_break_statement(Parser* p);
 static uint16_t parse_continue_statement(Parser* p);
+static uint16_t parse_switch_statement(Parser* p);
+static uint16_t parse_case_statement(Parser* p);
+static uint16_t parse_default_statement(Parser* p);
 // Removed parse_declare_block - handled inline now
 
 // Parser utilities
@@ -2955,6 +2958,11 @@ static uint16_t parse_statement(Parser* p) {
         return parse_continue_statement(p);
     }
     
+    // Switch statement
+    if (check(p, TOK_BLAZESWT)) {
+        return parse_switch_statement(p);
+    }
+    
     // Conditional - check for all other conditional tokens
     if (check(p, TOK_FUNC_CAN) || check(p, TOK_COND_IF) || 
         check(p, TOK_COND_ENS) || check(p, TOK_COND_VER) ||
@@ -4091,6 +4099,211 @@ static uint16_t parse_continue_statement(Parser* p) {
     
     print_str("[PARSER] Continue statement parsed successfully\n");
     return continue_node;
+}
+
+// Parse switch statement
+static uint16_t parse_switch_statement(Parser* p) {
+    print_str("[PARSER] Parsing switch statement\n");
+    
+    // Consume 'swt' or 'switch' token
+    advance(p);
+    
+    // Create switch node
+    uint16_t switch_node = alloc_node(p, NODE_SWITCH);
+    if (switch_node == 0) return 0;
+    
+    // Expect '(' for expression
+    if (!match(p, TOK_LPAREN)) {
+        print_str("[PARSER] ERROR: Expected '(' after switch\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse switch expression
+    uint16_t expr = parse_expression(p);
+    if (expr == 0) {
+        print_str("[PARSER] ERROR: Failed to parse switch expression\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect ')' to close expression
+    if (!match(p, TOK_RPAREN)) {
+        print_str("[PARSER] ERROR: Expected ')' after switch expression\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[switch_node].data.switch_stmt.var_idx = expr;
+    
+    // Expect '{' to start body
+    if (!match(p, TOK_LBRACE)) {
+        print_str("[PARSER] ERROR: Expected '{' after switch expression\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Create case list node
+    uint16_t case_list = alloc_node(p, NODE_CASE_LIST);
+    if (case_list == 0) return 0;
+    
+    // Initialize case list
+    p->nodes[case_list].data.case_list.first_case_idx = 0;
+    p->nodes[case_list].data.case_list.case_count = 0;
+    p->nodes[case_list].data.case_list.default_idx = 0;
+    
+    // Parse cases until '}'
+    uint16_t first_case = 0;
+    uint16_t last_case = 0;
+    uint16_t case_count = 0;
+    
+    print_str("[PARSER] Starting switch body parsing\n");
+    while (!at_end(p) && !check(p, TOK_RBRACE)) {
+        if (check(p, TOK_CASE)) {
+            uint16_t case_node = parse_case_statement(p);
+            if (case_node == 0) break;
+            
+            if (first_case == 0) {
+                first_case = case_node;
+                last_case = case_node;
+            } else {
+                // Link cases together
+                p->nodes[last_case].data.case_stmt.next_case_idx = case_node;
+                last_case = case_node;
+            }
+            case_count++;
+        } else if (check(p, TOK_DEFAULT)) {
+            uint16_t default_node = parse_default_statement(p);
+            if (default_node == 0) break;
+            p->nodes[case_list].data.case_list.default_idx = default_node;
+        } else {
+            print_str("[PARSER] ERROR: Expected 'case' or 'default' in switch body\n");
+            p->has_error = true;
+            return 0;
+        }
+    }
+    
+    // Expect '}' to close body
+    if (!match(p, TOK_RBRACE)) {
+        print_str("[PARSER] ERROR: Expected '}' after switch body\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Set case list data
+    p->nodes[case_list].data.case_list.first_case_idx = first_case;
+    p->nodes[case_list].data.case_list.case_count = case_count;
+    
+    p->nodes[switch_node].data.switch_stmt.case_list_idx = case_list;
+    
+    print_str("[PARSER] Switch statement parsed successfully\n");
+    return switch_node;
+}
+
+// Parse case statement
+static uint16_t parse_case_statement(Parser* p) {
+    print_str("[PARSER] Parsing case statement\n");
+    
+    // Consume 'case' token
+    advance(p);
+    
+    // Create case node
+    uint16_t case_node = alloc_node(p, NODE_CASE);
+    if (case_node == 0) return 0;
+    
+    // Parse case value expression
+    uint16_t value = parse_expression(p);
+    if (value == 0) {
+        print_str("[PARSER] ERROR: Failed to parse case value\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect ':' after case value
+    if (!match(p, TOK_COLON)) {
+        print_str("[PARSER] ERROR: Expected ':' after case value\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[case_node].data.case_stmt.value_idx = value;
+    p->nodes[case_node].data.case_stmt.next_case_idx = 0; // Will be set by switch parser
+    p->nodes[case_node].data.case_stmt.incase_idx = 0; // No nested incase for now
+    
+    // Parse case body statements until next case/default/end
+    uint16_t body_start = 0;
+    uint16_t body_end = 0;
+    
+    print_str("[PARSER] Starting case body parsing\n");
+    while (!at_end(p) && !check(p, TOK_CASE) && !check(p, TOK_DEFAULT) && !check(p, TOK_RBRACE)) {
+        uint16_t stmt = parse_statement(p);
+        if (stmt == 0) break;
+        
+        if (body_start == 0) {
+            body_start = stmt;
+            body_end = stmt;
+        } else {
+            // Link statements using binary node chain
+            uint16_t chain_node = alloc_node(p, NODE_BINARY_OP);
+            if (chain_node == 0) break;
+            p->nodes[chain_node].data.binary.op = TOK_SEMICOLON;
+            p->nodes[chain_node].data.binary.left_idx = body_end;
+            p->nodes[chain_node].data.binary.right_idx = stmt;
+            body_end = chain_node;
+        }
+    }
+    
+    p->nodes[case_node].data.case_stmt.action_list_idx = body_start;
+    
+    print_str("[PARSER] Case statement parsed successfully\n");
+    return case_node;
+}
+
+// Parse default statement
+static uint16_t parse_default_statement(Parser* p) {
+    print_str("[PARSER] Parsing default statement\n");
+    
+    // Consume 'default' token
+    advance(p);
+    
+    // Create default node
+    uint16_t default_node = alloc_node(p, NODE_DEFAULT);
+    if (default_node == 0) return 0;
+    
+    // Expect ':' after default
+    if (!match(p, TOK_COLON)) {
+        print_str("[PARSER] ERROR: Expected ':' after default\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse default body statements until end
+    uint16_t body_start = 0;
+    uint16_t body_end = 0;
+    
+    print_str("[PARSER] Starting default body parsing\n");
+    while (!at_end(p) && !check(p, TOK_CASE) && !check(p, TOK_DEFAULT) && !check(p, TOK_RBRACE)) {
+        uint16_t stmt = parse_statement(p);
+        if (stmt == 0) break;
+        
+        if (body_start == 0) {
+            body_start = stmt;
+            body_end = stmt;
+        } else {
+            // Link statements using binary node chain
+            uint16_t chain_node = alloc_node(p, NODE_BINARY_OP);
+            if (chain_node == 0) break;
+            p->nodes[chain_node].data.binary.op = TOK_SEMICOLON;
+            p->nodes[chain_node].data.binary.left_idx = body_end;
+            p->nodes[chain_node].data.binary.right_idx = stmt;
+            body_end = chain_node;
+        }
+    }
+    
+    p->nodes[default_node].data.default_case.action_list_idx = body_start;
+    
+    print_str("[PARSER] Default statement parsed successfully\n");
+    return default_node;
 }
 
 /* DUPLICATE SNIPPET DISABLED */

@@ -1,0 +1,30 @@
+## Test both switch syntax forms in Blaze
+
+var.i-x-[1]/
+var.i-y-[2]/
+
+# Test full word 'switch'
+switch (x) {
+    case 1:
+        print/ "x is one using switch" \
+        break;
+    case 2: 
+        print/ "x is two using switch" \
+        break;
+    default:
+        print/ "x is something else using switch" \
+}
+
+# Test short form 'swt'
+swt (y) {
+    case 1:
+        print/ "y is one using swt" \
+        break;
+    case 2: 
+        print/ "y is two using swt" \
+        break;
+    default:
+        print/ "y is something else using swt" \
+}
+
+print/ "Both switch forms tested" \

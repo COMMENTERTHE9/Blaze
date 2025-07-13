@@ -187,6 +187,21 @@ static uint32_t parse_identifier(const char* input, uint32_t pos, uint32_t len, 
     } else if (word_len == 8 && match_string(input, start, len, "continue")) {
         // Continue statement keyword
         tok->type = TOK_CONTINUE;
+    } else if (word_len == 3 && match_string(input, start, len, "swt")) {
+        // Switch statement keyword (short form)
+        tok->type = TOK_BLAZESWT;
+    } else if (word_len == 6 && match_string(input, start, len, "switch")) {
+        // Switch statement keyword (full word)
+        tok->type = TOK_BLAZESWT;
+    } else if (word_len == 4 && match_string(input, start, len, "case")) {
+        // Case statement keyword
+        tok->type = TOK_CASE;
+    } else if (word_len == 6 && match_string(input, start, len, "incase")) {
+        // Nested switch statement keyword
+        tok->type = TOK_INCASE;
+    } else if (word_len == 7 && match_string(input, start, len, "default")) {
+        // Default case keyword
+        tok->type = TOK_DEFAULT;
     } else if (word_len == 4 && match_string(input, start, len, "func")) {
         // Check if this is followed by .can
         if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "can")) {
@@ -1421,6 +1436,11 @@ void debug_print_tokens(Token* tokens, uint32_t count, const char* source) {
             case TOK_QUESTION: print_str("QUESTION"); break;
             case TOK_BREAK: print_str("BREAK"); break;
             case TOK_CONTINUE: print_str("CONTINUE"); break;
+            case TOK_BLAZESWT: print_str("SWITCH"); break;
+            case TOK_CASE: print_str("CASE"); break;
+            case TOK_INCASE: print_str("INCASE"); break;
+            case TOK_DEFAULT: print_str("DEFAULT"); break;
+            case TOK_SWITCH_END_NESTED: print_str("SWITCH_END_NESTED"); break;
             case TOK_EOF: print_str("EOF"); break;
             default: 
                 print_str("TOK(");
