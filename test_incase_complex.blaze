@@ -1,0 +1,134 @@
+// Test file for complex incase functionality - Advanced nested switch scenarios
+// Testing edge cases and complex decision trees
+
+f.main: {
+    // Complex business logic with multiple nested switches
+    
+    let request_type = 2;
+    let security_level = 1;
+    let user_role = 3;
+    let department = 2;
+    let priority = 1;
+    
+    // Test 1: Complex multi-level decision tree
+    switch(request_type) {
+        case 1:  // Data access request
+            f.print("Processing data access request");
+            incase(security_level) {
+                case 1:  // Low security
+                    f.print("Low security data access");
+                    incase(user_role) {
+                        case 1: f.print("Analyst - basic data only");
+                        case 2: f.print("Manager - department data");
+                        case 3: f.print("Director - full access");
+                        default: f.print("Unknown role - deny access");
+                    }
+                    
+                case 2:  // Medium security
+                    f.print("Medium security data access");
+                    incase(user_role) {
+                        case 2: 
+                            f.print("Manager access approved");
+                            incase(department) {
+                                case 1: f.print("HR department data");
+                                case 2: f.print("Finance department data");
+                                case 3: f.print("IT department data");
+                                default: f.print("Unknown department");
+                            }
+                        case 3: f.print("Director - all medium security data");
+                        default: f.print("Insufficient role for medium security");
+                    }
+                    
+                case 3:  // High security
+                    f.print("High security data access");
+                    incase(user_role) {
+                        case 3: 
+                            f.print("Director high security access");
+                            incase(priority) {
+                                case 1: f.print("High priority - immediate access");
+                                case 2: f.print("Medium priority - approval needed");
+                                case 3: f.print("Low priority - queue for review");
+                                default: f.print("Invalid priority level");
+                            }
+                        default: f.print("Insufficient role for high security");
+                    }
+                    
+                default:
+                    f.print("Invalid security level");
+            }
+            
+        case 2:  // System modification request
+            f.print("Processing system modification request");
+            incase(user_role) {
+                case 2:  // Manager
+                    f.print("Manager system modification");
+                    incase(department) {
+                        case 3:  // IT department
+                            f.print("IT Manager - system changes allowed");
+                            incase(priority) {
+                                case 1: f.print("Emergency change - immediate");
+                                case 2: f.print("Scheduled change - plan required");
+                                default: f.print("Standard change process");
+                            }
+                        default: f.print("Non-IT manager - limited changes only");
+                    }
+                    
+                case 3:  // Director
+                    f.print("Director system modification - full access");
+                    
+                default:
+                    f.print("Insufficient privileges for system modification");
+            }
+            
+        case 3:  // Emergency override request
+            f.print("Processing emergency override");
+            incase(user_role) {
+                case 3:  // Director level only
+                    f.print("Director emergency override");
+                    incase(security_level) {
+                        case 1: f.print("Low security override - auto-approved");
+                        case 2: f.print("Medium security override - logged");
+                        case 3: f.print("High security override - audit trail");
+                        default: f.print("Unknown security level for override");
+                    }
+                default:
+                    f.print("Emergency override denied - insufficient authority");
+            }
+            
+        default:
+            f.print("Unknown request type");
+    }
+    
+    // Test 2: Testing with variables in different contexts
+    let status_code = 200;
+    let error_type = 1;
+    let retry_count = 2;
+    
+    switch(status_code) {
+        case 200:  // Success
+            f.print("Request successful");
+            
+        case 400:  // Client error
+            f.print("Client error detected");
+            incase(error_type) {
+                case 1: f.print("Validation error");
+                case 2: f.print("Authentication error");
+                case 3: f.print("Authorization error");
+                default: f.print("Unknown client error");
+            }
+            
+        case 500:  // Server error
+            f.print("Server error detected");
+            incase(retry_count) {
+                case 0: f.print("No retries remaining - fail");
+                case 1: f.print("One retry remaining");
+                case 2: f.print("Multiple retries available");
+                default: f.print("Invalid retry count");
+            }
+            
+        default:
+            f.print("Unknown status code");
+    }
+    
+    f.ex(0);
+}

@@ -49,6 +49,7 @@ static uint16_t parse_continue_statement(Parser* p);
 static uint16_t parse_switch_statement(Parser* p);
 static uint16_t parse_case_statement(Parser* p);
 static uint16_t parse_default_statement(Parser* p);
+static uint16_t parse_incase_statement(Parser* p);
 // Removed parse_declare_block - handled inline now
 
 // Parser utilities
@@ -4228,7 +4229,7 @@ static uint16_t parse_case_statement(Parser* p) {
     
     p->nodes[case_node].data.case_stmt.value_idx = value;
     p->nodes[case_node].data.case_stmt.next_case_idx = 0; // Will be set by switch parser
-    p->nodes[case_node].data.case_stmt.incase_idx = 0; // No nested incase for now
+    p->nodes[case_node].data.case_stmt.incase_idx = 0; // Will be set if incase found
     
     // Parse case body statements until next case/default/end
     uint16_t body_start = 0;
@@ -4236,6 +4237,16 @@ static uint16_t parse_case_statement(Parser* p) {
     
     print_str("[PARSER] Starting case body parsing\n");
     while (!at_end(p) && !check(p, TOK_CASE) && !check(p, TOK_DEFAULT) && !check(p, TOK_RBRACE)) {
+        // Check for incase statement
+        if (check(p, TOK_INCASE)) {
+            uint16_t incase_node = parse_incase_statement(p);
+            if (incase_node != 0) {
+                p->nodes[case_node].data.case_stmt.incase_idx = incase_node;
+                print_str("[PARSER] Found incase in case statement\n");
+            }
+            continue;
+        }
+        
         uint16_t stmt = parse_statement(p);
         if (stmt == 0) break;
         
@@ -4304,6 +4315,105 @@ static uint16_t parse_default_statement(Parser* p) {
     
     print_str("[PARSER] Default statement parsed successfully\n");
     return default_node;
+}
+
+// Parse incase statement (nested switch)
+static uint16_t parse_incase_statement(Parser* p) {
+    print_str("[PARSER] Parsing incase statement (nested switch)\n");
+    
+    // Consume 'incase' token
+    advance(p);
+    
+    // Create incase node
+    uint16_t incase_node = alloc_node(p, NODE_INCASE);
+    if (incase_node == 0) return 0;
+    
+    // Expect '(' for expression
+    if (!match(p, TOK_LPAREN)) {
+        print_str("[PARSER] ERROR: Expected '(' after incase\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse incase expression (variable to switch on)
+    uint16_t expr = parse_expression(p);
+    if (expr == 0) {
+        print_str("[PARSER] ERROR: Failed to parse incase expression\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect ')' to close expression
+    if (!match(p, TOK_RPAREN)) {
+        print_str("[PARSER] ERROR: Expected ')' after incase expression\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[incase_node].data.incase_stmt.var_idx = expr;
+    
+    // Expect '{' to start nested switch body
+    if (!match(p, TOK_LBRACE)) {
+        print_str("[PARSER] ERROR: Expected '{' after incase expression\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Create case list node for nested cases
+    uint16_t case_list = alloc_node(p, NODE_CASE_LIST);
+    if (case_list == 0) return 0;
+    
+    // Initialize case list
+    p->nodes[case_list].data.case_list.first_case_idx = 0;
+    p->nodes[case_list].data.case_list.case_count = 0;
+    p->nodes[case_list].data.case_list.default_idx = 0;
+    
+    // Parse nested cases until '}'
+    uint16_t first_case = 0;
+    uint16_t last_case = 0;
+    uint16_t case_count = 0;
+    
+    print_str("[PARSER] Starting incase body parsing\n");
+    while (!at_end(p) && !check(p, TOK_RBRACE)) {
+        if (check(p, TOK_CASE)) {
+            uint16_t case_node = parse_case_statement(p);
+            if (case_node == 0) break;
+            
+            if (first_case == 0) {
+                first_case = case_node;
+                last_case = case_node;
+            } else {
+                // Link cases together
+                p->nodes[last_case].data.case_stmt.next_case_idx = case_node;
+                last_case = case_node;
+            }
+            case_count++;
+        } else if (check(p, TOK_DEFAULT)) {
+            uint16_t default_node = parse_default_statement(p);
+            if (default_node == 0) break;
+            p->nodes[case_list].data.case_list.default_idx = default_node;
+        } else {
+            print_str("[PARSER] ERROR: Expected 'case' or 'default' in incase body\n");
+            p->has_error = true;
+            return 0;
+        }
+    }
+    
+    // Expect '}' to close nested switch body
+    if (!match(p, TOK_RBRACE)) {
+        print_str("[PARSER] ERROR: Expected '}' after incase body\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Set case list data
+    p->nodes[case_list].data.case_list.first_case_idx = first_case;
+    p->nodes[case_list].data.case_list.case_count = case_count;
+    
+    p->nodes[incase_node].data.incase_stmt.case_list_idx = case_list;
+    
+    print_str("[PARSER] Incase statement parsed successfully\n");
+    return incase_node;
 }
 
 /* DUPLICATE SNIPPET DISABLED */

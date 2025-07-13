@@ -1,0 +1,85 @@
+// Test file for incase functionality - Basic nested switch example
+// Based on user's examples showing auth_method and admin_level decision trees
+
+f.main: {
+    // User authentication and authorization flow with nested switches
+    
+    // Basic auth method selection
+    let auth_method = 2;
+    let admin_level = 1;
+    let session_type = 3;
+    
+    // Test 1: Basic incase functionality
+    switch(auth_method) {
+        case 1:  // Password authentication
+            f.print("Password auth selected");
+            incase(admin_level) {
+                case 0: f.print("Guest user");
+                case 1: f.print("Regular admin");
+                case 2: f.print("Super admin");
+                default: f.print("Unknown admin level");
+            }
+            
+        case 2:  // Token authentication  
+            f.print("Token auth selected");
+            incase(admin_level) {
+                case 0: f.print("Token guest");
+                case 1: f.print("Token admin");
+                case 2: f.print("Token super admin");
+                default: f.print("Invalid token level");
+            }
+            
+        case 3:  // OAuth authentication
+            f.print("OAuth selected");
+            incase(session_type) {
+                case 1: f.print("OAuth session - temporary");
+                case 2: f.print("OAuth session - persistent");
+                case 3: f.print("OAuth session - enterprise");
+                default: f.print("OAuth unknown session");
+            }
+            
+        default:
+            f.print("Unknown authentication method");
+    }
+    
+    // Test 2: Multiple levels of nesting
+    let user_type = 1;
+    let permission_level = 2;
+    let feature_access = 1;
+    
+    switch(user_type) {
+        case 1:  // Standard user
+            f.print("Standard user detected");
+            incase(permission_level) {
+                case 1: 
+                    f.print("Basic permissions");
+                    incase(feature_access) {
+                        case 1: f.print("Feature A allowed");
+                        case 2: f.print("Feature B allowed");
+                        default: f.print("No feature access");
+                    }
+                case 2:
+                    f.print("Extended permissions");
+                    incase(feature_access) {
+                        case 1: f.print("All features allowed");
+                        case 2: f.print("Premium features allowed");
+                        default: f.print("Limited feature access");
+                    }
+                default: f.print("Unknown permission level");
+            }
+            
+        case 2:  // Premium user
+            f.print("Premium user detected");
+            incase(permission_level) {
+                case 1: f.print("Premium basic");
+                case 2: f.print("Premium advanced");
+                case 3: f.print("Premium enterprise");
+                default: f.print("Premium unknown level");
+            }
+            
+        default:
+            f.print("Unknown user type");
+    }
+    
+    f.ex(0);
+}

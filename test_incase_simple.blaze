@@ -1,0 +1,27 @@
+f.main: {
+    let auth_method = 2;
+    let admin_level = 1;
+    
+    switch(auth_method) {
+        case 1:
+            f.print("Password auth");
+            incase(admin_level) {
+                case 0: f.print("Guest user");
+                case 1: f.print("Regular admin");
+                default: f.print("Unknown level");
+            }
+            
+        case 2:
+            f.print("Token auth");
+            incase(admin_level) {
+                case 0: f.print("Token guest");
+                case 1: f.print("Token admin");
+                default: f.print("Invalid level");
+            }
+            
+        default:
+            f.print("Unknown auth method");
+    }
+    
+    f.ex(0);
+}
