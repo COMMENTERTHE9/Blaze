@@ -157,6 +157,30 @@ static uint32_t parse_identifier(const char* input, uint32_t pos, uint32_t len, 
     } else if (word_len == 4 && match_string(input, start, len, "else")) {
         // Direct else keyword
         tok->type = TOK_ELSE;
+    } else if (word_len == 4 && match_string(input, start, len, "true")) {
+        // Boolean true keyword
+        tok->type = TOK_TRUE;
+    } else if (word_len == 5 && match_string(input, start, len, "false")) {
+        // Boolean false keyword
+        tok->type = TOK_FALSE;
+    } else if (word_len == 4 && match_string(input, start, len, "null")) {
+        // Null type keyword
+        tok->type = TOK_NULL;
+    } else if (word_len == 9 && match_string(input, start, len, "undefined")) {
+        // Undefined type keyword
+        tok->type = TOK_UNDEFINED;
+    } else if (word_len == 4 && match_string(input, start, len, "void")) {
+        // Void type keyword
+        tok->type = TOK_VOID;
+    } else if (word_len == 7 && match_string(input, start, len, "typedef")) {
+        // Type alias keyword
+        tok->type = TOK_TYPEDEF;
+    } else if (word_len == 5 && match_string(input, start, len, "const")) {
+        // Constant variable keyword
+        tok->type = TOK_CONST_KW;
+    } else if (word_len == 9 && match_string(input, start, len, "immutable")) {
+        // Immutable variable keyword
+        tok->type = TOK_IMMUTABLE;
     } else if (word_len == 4 && match_string(input, start, len, "func")) {
         // Check if this is followed by .can
         if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "can")) {

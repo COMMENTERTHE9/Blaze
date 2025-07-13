@@ -382,6 +382,16 @@ typedef enum {
     TOK_TRUE,            // true
     TOK_FALSE,           // false
     
+    // Null/undefined types
+    TOK_NULL,            // null
+    TOK_UNDEFINED,       // undefined
+    
+    // Type system
+    TOK_VOID,            // void
+    TOK_TYPEDEF,         // typedef
+    TOK_CONST_KW,        // const (keyword)
+    TOK_IMMUTABLE,       // immutable
+    
     // Control
     TOK_EOF,
     TOK_ERROR,
@@ -487,11 +497,16 @@ typedef enum {
     NODE_TERNARY_OP,
     NODE_COMPOUND_ASSIGN,
     NODE_WHILE_LOOP,
-    NODE_FOR_LOOP
+    NODE_FOR_LOOP,
+    NODE_NULL,
+    NODE_UNDEFINED,
+    NODE_VOID,
+    NODE_TYPEDEF,
+    NODE_CONST_VAR
 } NodeType;
 
 // Define the maximum node type value
-#define NODE_TYPE_MAX (NODE_FOR_LOOP + 1)
+#define NODE_TYPE_MAX (NODE_CONST_VAR + 1)
 
 // AST Node - compact representation
 typedef struct ASTNode {
@@ -614,6 +629,25 @@ typedef struct ASTNode {
         struct {
             bool value;                 // true or false
         } boolean;
+        
+        // Null value (no data needed)
+        struct {
+            bool is_null;               // true for null, false for undefined
+        } null_value;
+        
+        // Type alias definition
+        struct {
+            uint32_t alias_name_offset; // Name of the type alias
+            uint16_t alias_name_len;    // Length of alias name
+            uint32_t target_type_offset; // Target type name
+            uint16_t target_type_len;   // Length of target type name
+        } typedef_def;
+        
+        // Constant variable definition
+        struct {
+            uint16_t var_def_idx;       // Reference to variable definition
+            bool is_immutable;          // true for immutable, false for const
+        } const_var;
     } data;
 } ASTNode;
 

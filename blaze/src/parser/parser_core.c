@@ -43,6 +43,7 @@ static uint16_t parse_solid_number(Parser* p);
 static uint16_t parse_timeline_def(Parser* p);
 static uint16_t parse_gggx_command(Parser* p);
 static uint16_t parse_gggx_generic_command(Parser* p);
+static uint16_t parse_typedef_def(Parser* p);
 // Removed parse_declare_block - handled inline now
 
 // Parser utilities
@@ -710,6 +711,16 @@ static uint16_t parse_primary(Parser* p) {
         return bool_node;
     }
     
+    // Null/undefined literals
+    if (check(p, TOK_NULL) || check(p, TOK_UNDEFINED)) {
+        Token* null_tok = advance(p);
+        uint16_t null_node = alloc_node(p, NODE_NULL);
+        if (null_node == 0) return 0;
+        
+        p->nodes[null_node].data.null_value.is_null = (null_tok->type == TOK_NULL);
+        return null_node;
+    }
+    
     // Unary operators (!, ~~)
     if (check(p, TOK_BANG) || check(p, TOK_BIT_NOT)) {
         Token* op_tok = advance(p);
@@ -1319,9 +1330,16 @@ static uint16_t parse_var_def(Parser* p) {
     // SPECIAL CASE: Token type 18 is incorrectly set for var.i-i- tokens
     // It should be treated as simple var.name- syntax, not typed var.t-name- syntax
     if (var_tok->type == 18) {
-        // Simple variable: var.name-  
-        name_start = var_tok->start + 4; // Skip "var."
-        name_len = 1; // Just the single character name
+        // Check if this is typed syntax var.t-name- or simple var.name-
+        if (var_tok->len >= 8 && p->source[var_tok->start + 5] == '-') {
+            // Typed variable: var.t-name- (like var.i-j-)
+            name_start = var_tok->start + 6; // Skip "var.t-"
+            name_len = 1; // Single character name
+        } else {
+            // Simple variable: var.name-  
+            name_start = var_tok->start + 4; // Skip "var."
+            name_len = 1; // Just the single character name
+        }
     }
     else if (var_tok->type == TOK_VAR_INT || var_tok->type == TOK_VAR_FLOAT ||
         var_tok->type == TOK_VAR_STRING || var_tok->type == TOK_VAR_BOOL ||
@@ -1721,46 +1739,43 @@ static uint16_t parse_var_def(Parser* p) {
 
 // Parse constant definition: var.c-name-[value]
 static uint16_t parse_const_def(Parser* p) {
-    Token* const_tok = advance(p); // consume var.c-name- token
+    Token* const_tok = advance(p); // consume const or immutable token
     
+    bool is_immutable = (const_tok->type == TOK_IMMUTABLE);
     
-    uint16_t const_node = alloc_node(p, NODE_VAR_DEF); // Reuse VAR_DEF node
+    uint16_t const_node = alloc_node(p, NODE_CONST_VAR);
     if (const_node == 0) return 0;
     
-    // Mark as constant using type 1 in upper 16 bits of temporal_offset
-    p->nodes[const_node].data.timing.temporal_offset = ((uint32_t)1 << 16); // 1 = constant
+    p->nodes[const_node].data.const_var.is_immutable = is_immutable;
     
-    // Extract constant name from the var.c-name- token
-    uint32_t name_start = const_tok->start + 6; // Skip "var.c-"
-    uint32_t name_len = const_tok->len - 6; // Remove "var.c-"
-    
-    // Check if it ends with "-" and remove it
-    if (name_len > 0 && p->source[const_tok->start + const_tok->len - 1] == '-') {
-        name_len--;
-    }
-    
-    // Bounds check
-    if (name_len == 0 || name_len > 256) {
+    // Expect variable name
+    if (!check(p, TOK_IDENTIFIER)) {
         p->has_error = true;
         return 0;
     }
     
-    // Store the constant name in string pool
+    Token* name_tok = advance(p);
+    
+    // Create a variable definition node and reference it
+    uint16_t var_node = alloc_node(p, NODE_VAR_DEF);
+    if (var_node == 0) return 0;
+    
+    p->nodes[const_node].data.const_var.var_def_idx = var_node;
+    
+    // Store the variable name
     uint32_t name_offset = p->string_pos;
-    
-    // Check if we have enough space for the name + null terminator
-    if (p->string_pos + name_len + 1 > 4096) {
+    if (p->string_pos + name_tok->len + 1 > 4096) {
         p->has_error = true;
         return 0;
     }
     
-    for (uint32_t i = 0; i < name_len; i++) {
-        p->string_pool[p->string_pos++] = p->source[name_start + i];
+    for (uint32_t i = 0; i < name_tok->len; i++) {
+        p->string_pool[p->string_pos++] = p->source[name_tok->start + i];
     }
     p->string_pool[p->string_pos++] = '\0';
     
-    p->nodes[const_node].data.ident.name_offset = name_offset;
-    p->nodes[const_node].data.ident.name_len = name_len;
+    p->nodes[var_node].data.ident.name_offset = name_offset;
+    p->nodes[var_node].data.ident.name_len = name_tok->len;
     
     // Check for initializer value in brackets [value]
     if (check(p, TOK_BRACKET_OPEN)) {
@@ -1789,14 +1804,69 @@ static uint16_t parse_const_def(Parser* p) {
             return 0;
         }
         
-        // Pack type and init expression into temporal_offset
+        // Store initialization expression in the variable definition node
         if (init_expr != 0) {
-            uint32_t packed = ((uint32_t)1 << 16) | (init_expr & 0xFFFF);
-            p->nodes[const_node].data.timing.temporal_offset = packed;
+            p->nodes[var_node].data.timing.expr_idx = init_expr;
         }
     }
     
     return const_node;
+}
+
+// Parse typedef definition: typedef alias_name target_type
+static uint16_t parse_typedef_def(Parser* p) {
+    advance(p); // consume 'typedef'
+    
+    // Expect alias name
+    if (!check(p, TOK_IDENTIFIER)) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    Token* alias_tok = advance(p);
+    
+    // Expect target type
+    if (!check(p, TOK_IDENTIFIER)) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    Token* target_tok = advance(p);
+    
+    uint16_t typedef_node = alloc_node(p, NODE_TYPEDEF);
+    if (typedef_node == 0) return 0;
+    
+    // Store alias name
+    uint32_t alias_offset = p->string_pos;
+    if (p->string_pos + alias_tok->len + 1 > 4096) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    for (uint32_t i = 0; i < alias_tok->len; i++) {
+        p->string_pool[p->string_pos++] = p->source[alias_tok->start + i];
+    }
+    p->string_pool[p->string_pos++] = '\0';
+    
+    p->nodes[typedef_node].data.typedef_def.alias_name_offset = alias_offset;
+    p->nodes[typedef_node].data.typedef_def.alias_name_len = alias_tok->len;
+    
+    // Store target type name
+    uint32_t target_offset = p->string_pos;
+    if (p->string_pos + target_tok->len + 1 > 4096) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    for (uint32_t i = 0; i < target_tok->len; i++) {
+        p->string_pool[p->string_pos++] = p->source[target_tok->start + i];
+    }
+    p->string_pool[p->string_pos++] = '\0';
+    
+    p->nodes[typedef_node].data.typedef_def.target_type_offset = target_offset;
+    p->nodes[typedef_node].data.typedef_def.target_type_len = target_tok->len;
+    
+    return typedef_node;
 }
 
 // Parse pipe-delimited identifier |name|
@@ -2414,6 +2484,182 @@ static uint16_t parse_for_loop(Parser* p) {
     return for_node;
 }
 
+// Traditional while loop: while (condition) { ... }
+static uint16_t parse_traditional_while_loop(Parser* p) {
+    advance(p); // consume 'while'
+    
+    uint16_t while_node = alloc_node(p, NODE_WHILE_LOOP);
+    if (while_node == 0) return 0;
+    
+    // Expect '(' for condition
+    if (!match(p, TOK_LPAREN)) {
+        print_str("[PARSER] ERROR: Expected '(' after while\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse condition expression
+    uint16_t condition = parse_expression(p);
+    if (condition == 0) {
+        print_str("[PARSER] ERROR: Failed to parse while condition\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect ')' to close condition
+    if (!match(p, TOK_RPAREN)) {
+        print_str("[PARSER] ERROR: Expected ')' after while condition\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[while_node].data.while_loop.condition_idx = condition;
+    
+    // Expect '{' to start body
+    if (!match(p, TOK_LBRACE)) {
+        print_str("[PARSER] ERROR: Expected '{' after while condition\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse body statements until '}'
+    uint16_t body_start = 0;
+    uint16_t body_end = 0;
+    
+    print_str("[PARSER] Starting traditional while loop body parsing\n");
+    while (!at_end(p) && !check(p, TOK_RBRACE)) {
+        uint16_t stmt = parse_statement(p);
+        if (stmt == 0) break;
+        
+        if (body_start == 0) {
+            body_start = stmt;
+            body_end = stmt;
+        } else {
+            // Link statements using binary node chain
+            uint16_t chain_node = alloc_node(p, NODE_BINARY_OP);
+            if (chain_node == 0) break;
+            p->nodes[chain_node].data.binary.op = TOK_SEMICOLON;
+            p->nodes[chain_node].data.binary.left_idx = body_end;
+            p->nodes[chain_node].data.binary.right_idx = stmt;
+            body_end = chain_node;
+        }
+    }
+    
+    // Expect '}' to close body
+    if (!match(p, TOK_RBRACE)) {
+        print_str("[PARSER] ERROR: Expected '}' after while body\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[while_node].data.while_loop.body_idx = body_start;
+    return while_node;
+}
+
+// Traditional for loop: for (init; condition; increment) { ... }
+static uint16_t parse_traditional_for_loop(Parser* p) {
+    advance(p); // consume 'for'
+    
+    uint16_t for_node = alloc_node(p, NODE_FOR_LOOP);
+    if (for_node == 0) return 0;
+    
+    // Expect '(' for parameters
+    if (!match(p, TOK_LPAREN)) {
+        print_str("[PARSER] ERROR: Expected '(' after for\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse initialization statement
+    uint16_t init = parse_statement(p);
+    if (init == 0) {
+        print_str("[PARSER] ERROR: Failed to parse for init\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect ';' separator
+    if (!match(p, TOK_SEMICOLON)) {
+        print_str("[PARSER] ERROR: Expected ';' after for init\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse condition expression
+    uint16_t condition = parse_expression(p);
+    if (condition == 0) {
+        print_str("[PARSER] ERROR: Failed to parse for condition\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect ';' separator
+    if (!match(p, TOK_SEMICOLON)) {
+        print_str("[PARSER] ERROR: Expected ';' after for condition\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse increment statement
+    uint16_t increment = parse_statement(p);
+    if (increment == 0) {
+        print_str("[PARSER] ERROR: Failed to parse for increment\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect ')' to close parameters
+    if (!match(p, TOK_RPAREN)) {
+        print_str("[PARSER] ERROR: Expected ')' after for parameters\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[for_node].data.for_loop.init_idx = init;
+    p->nodes[for_node].data.for_loop.condition_idx = condition;
+    p->nodes[for_node].data.for_loop.increment_idx = increment;
+    
+    // Expect '{' to start body
+    if (!match(p, TOK_LBRACE)) {
+        print_str("[PARSER] ERROR: Expected '{' after for parameters\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse body statements until '}'
+    uint16_t body_start = 0;
+    uint16_t body_end = 0;
+    
+    print_str("[PARSER] Starting traditional for loop body parsing\n");
+    while (!at_end(p) && !check(p, TOK_RBRACE)) {
+        uint16_t stmt = parse_statement(p);
+        if (stmt == 0) break;
+        
+        if (body_start == 0) {
+            body_start = stmt;
+            body_end = stmt;
+        } else {
+            // Link statements using binary node chain
+            uint16_t chain_node = alloc_node(p, NODE_BINARY_OP);
+            if (chain_node == 0) break;
+            p->nodes[chain_node].data.binary.op = TOK_SEMICOLON;
+            p->nodes[chain_node].data.binary.left_idx = body_end;
+            p->nodes[chain_node].data.binary.right_idx = stmt;
+            body_end = chain_node;
+        }
+    }
+    
+    // Expect '}' to close body
+    if (!match(p, TOK_RBRACE)) {
+        print_str("[PARSER] ERROR: Expected '}' after for body\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[for_node].data.for_loop.body_idx = body_start;
+    return for_node;
+}
+
 static uint16_t parse_conditional(Parser* p) {
     // Advance the conditional token (if, while, etc.)
     Token* cond_tok = advance(p);
@@ -2634,9 +2880,14 @@ static uint16_t parse_statement(Parser* p) {
         return var_node;
     }
     
-    // Constant definition
-    if (check(p, TOK_CONST)) {
+    // Constant definition (const or immutable)
+    if (check(p, TOK_CONST_KW) || check(p, TOK_IMMUTABLE)) {
         return parse_const_def(p);
+    }
+    
+    // Typedef definition
+    if (check(p, TOK_TYPEDEF)) {
+        return parse_typedef_def(p);
     }
     
     // Array 4D definition
@@ -2672,14 +2923,24 @@ static uint16_t parse_statement(Parser* p) {
         return parse_action_block(p);
     }
     
-    // While loop
+    // While loop (function style)
     if (check(p, TOK_COND_WHL)) {
         return parse_while_loop(p);
     }
     
-    // For loop
+    // For loop (function style)
     if (check(p, TOK_COND_FOR)) {
         return parse_for_loop(p);
+    }
+    
+    // Traditional while loop: while (condition) { ... }
+    if (check(p, TOK_WHILE)) {
+        return parse_traditional_while_loop(p);
+    }
+    
+    // Traditional for loop: for (init; condition; increment) { ... }
+    if (check(p, TOK_FOR)) {
+        return parse_traditional_for_loop(p);
     }
     
     // Conditional - check for all other conditional tokens
