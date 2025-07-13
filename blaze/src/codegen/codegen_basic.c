@@ -58,6 +58,12 @@ extern void generate_conditional(CodeBuffer* buf, ASTNode* nodes, uint16_t cond_
 extern void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                               SymbolTable* symbols, char* string_pool);
 
+// Forward declaration for switch/case generation
+extern void generate_case_list(CodeBuffer* buf, ASTNode* nodes, uint16_t case_list_idx,
+                              SymbolTable* symbols, char* string_pool);
+extern void generate_incase_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t incase_idx,
+                                     SymbolTable* symbols, char* string_pool);
+
 // Forward declaration for float printing
 extern void generate_print_float(CodeBuffer* buf);
 extern void generate_print_float_safe(CodeBuffer* buf);
@@ -1842,6 +1848,45 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
             generate_continue_jump(buf);
             break;
             
+        case NODE_SWITCH: {
+            print_str("[SWITCH] Generating switch statement at index ");
+            print_num(stmt_idx);
+            print_str("\n");
+            
+            // Get switch variable and case list
+            uint16_t var_idx = stmt_node->data.switch_stmt.var_idx;
+            uint16_t case_list_idx = stmt_node->data.switch_stmt.case_list_idx;
+            
+            print_str("[SWITCH] var_idx=");
+            print_num(var_idx);
+            print_str(" case_list_idx=");
+            print_num(case_list_idx);
+            print_str("\n");
+            
+            // Generate switch variable evaluation
+            if (var_idx != 0) {
+                print_str("[SWITCH] Evaluating switch variable\n");
+                generate_expression(buf, nodes, var_idx, symbols, string_pool);
+                // Switch value is now in RAX
+            }
+            
+            // Generate case list
+            if (case_list_idx != 0) {
+                generate_case_list(buf, nodes, case_list_idx, symbols, string_pool);
+            }
+            
+            print_str("[SWITCH] Switch statement generation complete\n");
+            break;
+        }
+        
+        case NODE_CASE:
+        case NODE_INCASE:
+        case NODE_DEFAULT:
+        case NODE_CASE_LIST:
+            // These are handled by generate_case_list, not as standalone statements
+            print_str("[STMT] Case/incase/default/case_list nodes handled by parent switch\n");
+            break;
+            
         default:
             print_str("CODEGEN_ERROR: Unsupported statement type ");
             print_num(stmt_node->type);
@@ -1852,6 +1897,197 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
     }
     
     codegen_stats.statements_generated++;
+}
+
+// Generate code for switch case list
+void generate_case_list(CodeBuffer* buf, ASTNode* nodes, uint16_t case_list_idx,
+                       SymbolTable* symbols, char* string_pool) {
+    if (case_list_idx == 0 || case_list_idx >= 4096) {
+        print_str("generate_case_list: invalid case_list_idx ");
+        print_num(case_list_idx);
+        print_str("\n");
+        return;
+    }
+    
+    ASTNode* case_list_node = &nodes[case_list_idx];
+    if (case_list_node->type != NODE_CASE_LIST) {
+        print_str("generate_case_list: not a case list node\n");
+        return;
+    }
+    
+    print_str("[CASE_LIST] Generating case list\n");
+    
+    uint16_t first_case_idx = case_list_node->data.case_list.first_case_idx;
+    uint16_t case_count = case_list_node->data.case_list.case_count;
+    uint16_t default_idx = case_list_node->data.case_list.default_idx;
+    
+    print_str("[CASE_LIST] first_case=");
+    print_num(first_case_idx);
+    print_str(" count=");
+    print_num(case_count);
+    print_str(" default=");
+    print_num(default_idx);
+    print_str("\n");
+    
+    // Switch value is in RAX - we'll compare against each case
+    // We need to generate a jump table or series of comparisons
+    
+    // Array to store jump positions for each case
+    uint32_t case_jump_positions[32]; // Support up to 32 cases
+    uint16_t case_indices[32];
+    uint32_t jump_count = 0;
+    
+    // Generate comparisons for each case
+    uint16_t current_case = first_case_idx;
+    while (current_case != 0 && current_case < 4096 && jump_count < 32) {
+        ASTNode* case_node = &nodes[current_case];
+        if (case_node->type != NODE_CASE) {
+            print_str("[CASE_LIST] ERROR: Expected case node\n");
+            break;
+        }
+        
+        // Generate comparison
+        uint16_t value_idx = case_node->data.case_stmt.value_idx;
+        if (value_idx != 0) {
+            print_str("[CASE_LIST] Generating case comparison for value_idx=");
+            print_num(value_idx);
+            print_str("\n");
+            
+            // Evaluate case value into RBX
+            generate_expression(buf, nodes, value_idx, symbols, string_pool);
+            // Move result to RBX for comparison
+            emit_mov_reg_reg(buf, RBX, RAX);
+            
+            // Restore switch value to RAX (we need to save it)
+            // TODO: Implement proper register management
+            // For now, we'll assume switch value is on stack
+            
+            // Compare switch value (RAX) with case value (RBX)
+            emit_cmp_reg_reg(buf, RAX, RBX);
+            
+            // Jump to case body if equal
+            emit_je_rel32(buf, 0); // We'll patch this later
+            case_jump_positions[jump_count] = buf->position - 4;
+            case_indices[jump_count] = current_case;
+            jump_count++;
+        }
+        
+        // Move to next case
+        current_case = case_node->data.case_stmt.next_case_idx;
+    }
+    
+    // If no cases matched, jump to default (if exists)
+    uint32_t default_jump_pos = 0;
+    if (default_idx != 0) {
+        emit_jmp_rel32(buf, 0); // Jump to default
+        default_jump_pos = buf->position - 4;
+    } else {
+        // No default case - jump to end
+        emit_jmp_rel32(buf, 0);
+        default_jump_pos = buf->position - 4;
+    }
+    
+    // Generate case bodies and patch jump addresses
+    for (uint32_t i = 0; i < jump_count; i++) {
+        uint32_t case_start = buf->position;
+        
+        // Patch the jump to this case
+        uint32_t offset = case_start - case_jump_positions[i] - 4;
+        buf->code[case_jump_positions[i]] = offset & 0xFF;
+        buf->code[case_jump_positions[i] + 1] = (offset >> 8) & 0xFF;
+        buf->code[case_jump_positions[i] + 2] = (offset >> 16) & 0xFF;
+        buf->code[case_jump_positions[i] + 3] = (offset >> 24) & 0xFF;
+        
+        // Generate case body
+        ASTNode* case_node = &nodes[case_indices[i]];
+        uint16_t action_list_idx = case_node->data.case_stmt.action_list_idx;
+        uint16_t incase_idx = case_node->data.case_stmt.incase_idx;
+        
+        print_str("[CASE_LIST] Generating case body for case ");
+        print_num(case_indices[i]);
+        print_str("\n");
+        
+        // Generate case actions
+        if (action_list_idx != 0) {
+            generate_statement(buf, nodes, action_list_idx, symbols, string_pool);
+        }
+        
+        // Generate incase if present
+        if (incase_idx != 0) {
+            print_str("[CASE_LIST] Generating incase for case ");
+            print_num(case_indices[i]);
+            print_str("\n");
+            generate_incase_statement(buf, nodes, incase_idx, symbols, string_pool);
+        }
+        
+        // Fall through to next case (no break generated automatically)
+    }
+    
+    // Generate default case if present
+    if (default_idx != 0) {
+        uint32_t default_start = buf->position;
+        
+        // Patch default jump
+        uint32_t default_offset = default_start - default_jump_pos - 4;
+        buf->code[default_jump_pos] = default_offset & 0xFF;
+        buf->code[default_jump_pos + 1] = (default_offset >> 8) & 0xFF;
+        buf->code[default_jump_pos + 2] = (default_offset >> 16) & 0xFF;
+        buf->code[default_jump_pos + 3] = (default_offset >> 24) & 0xFF;
+        
+        print_str("[CASE_LIST] Generating default case\n");
+        ASTNode* default_node = &nodes[default_idx];
+        if (default_node->type == NODE_DEFAULT) {
+            uint16_t action_list_idx = default_node->data.default_case.action_list_idx;
+            if (action_list_idx != 0) {
+                generate_statement(buf, nodes, action_list_idx, symbols, string_pool);
+            }
+        }
+    } else {
+        // Patch default jump to end
+        uint32_t end_offset = buf->position - default_jump_pos - 4;
+        buf->code[default_jump_pos] = end_offset & 0xFF;
+        buf->code[default_jump_pos + 1] = (end_offset >> 8) & 0xFF;
+        buf->code[default_jump_pos + 2] = (end_offset >> 16) & 0xFF;
+        buf->code[default_jump_pos + 3] = (end_offset >> 24) & 0xFF;
+    }
+    
+    print_str("[CASE_LIST] Case list generation complete\n");
+}
+
+// Generate code for incase statement (nested switch)
+void generate_incase_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t incase_idx,
+                              SymbolTable* symbols, char* string_pool) {
+    if (incase_idx == 0 || incase_idx >= 4096) {
+        print_str("generate_incase_statement: invalid incase_idx ");
+        print_num(incase_idx);
+        print_str("\n");
+        return;
+    }
+    
+    ASTNode* incase_node = &nodes[incase_idx];
+    if (incase_node->type != NODE_INCASE) {
+        print_str("generate_incase_statement: not an incase node\n");
+        return;
+    }
+    
+    print_str("[INCASE] Generating incase statement\n");
+    
+    uint16_t var_idx = incase_node->data.incase_stmt.var_idx;
+    uint16_t case_list_idx = incase_node->data.incase_stmt.case_list_idx;
+    
+    // Generate incase variable evaluation
+    if (var_idx != 0) {
+        print_str("[INCASE] Evaluating incase variable\n");
+        generate_expression(buf, nodes, var_idx, symbols, string_pool);
+        // Incase value is now in RAX
+    }
+    
+    // Generate nested case list
+    if (case_list_idx != 0) {
+        generate_case_list(buf, nodes, case_list_idx, symbols, string_pool);
+    }
+    
+    print_str("[INCASE] Incase statement generation complete\n");
 }
 
 // Generate code for conditional statements (if/else, while, etc.)
