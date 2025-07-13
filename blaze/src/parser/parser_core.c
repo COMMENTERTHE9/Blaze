@@ -44,6 +44,8 @@ static uint16_t parse_timeline_def(Parser* p);
 static uint16_t parse_gggx_command(Parser* p);
 static uint16_t parse_gggx_generic_command(Parser* p);
 static uint16_t parse_typedef_def(Parser* p);
+static uint16_t parse_break_statement(Parser* p);
+static uint16_t parse_continue_statement(Parser* p);
 // Removed parse_declare_block - handled inline now
 
 // Parser utilities
@@ -2943,6 +2945,16 @@ static uint16_t parse_statement(Parser* p) {
         return parse_traditional_for_loop(p);
     }
     
+    // Break statement
+    if (check(p, TOK_BREAK)) {
+        return parse_break_statement(p);
+    }
+    
+    // Continue statement  
+    if (check(p, TOK_CONTINUE)) {
+        return parse_continue_statement(p);
+    }
+    
     // Conditional - check for all other conditional tokens
     if (check(p, TOK_FUNC_CAN) || check(p, TOK_COND_IF) || 
         check(p, TOK_COND_ENS) || check(p, TOK_COND_VER) ||
@@ -4043,6 +4055,42 @@ static uint16_t parse_gggx_generic_command(Parser* p) {
     p->nodes[call_node].data.binary.right_idx = arg_node;
 
     return call_node;
+}
+
+// Parse break statement
+static uint16_t parse_break_statement(Parser* p) {
+    print_str("[PARSER] Parsing break statement\n");
+    
+    // Consume 'break' token
+    advance(p);
+    
+    // Create break node
+    uint16_t break_node = alloc_node(p, NODE_BREAK);
+    if (break_node == 0) return 0;
+    
+    // Set loop depth to 0 (innermost loop)
+    p->nodes[break_node].data.break_stmt.loop_depth = 0;
+    
+    print_str("[PARSER] Break statement parsed successfully\n");
+    return break_node;
+}
+
+// Parse continue statement
+static uint16_t parse_continue_statement(Parser* p) {
+    print_str("[PARSER] Parsing continue statement\n");
+    
+    // Consume 'continue' token
+    advance(p);
+    
+    // Create continue node
+    uint16_t continue_node = alloc_node(p, NODE_CONTINUE);
+    if (continue_node == 0) return 0;
+    
+    // Set loop depth to 0 (innermost loop)
+    p->nodes[continue_node].data.continue_stmt.loop_depth = 0;
+    
+    print_str("[PARSER] Continue statement parsed successfully\n");
+    return continue_node;
 }
 
 /* DUPLICATE SNIPPET DISABLED */

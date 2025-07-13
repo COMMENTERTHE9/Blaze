@@ -323,7 +323,8 @@ int main(int argc, char** argv) {
         .capacity = MAX_CODE_SIZE,
         .has_error = false,
         .temporal_count = 0,
-        .target_platform = target_platform
+        .target_platform = target_platform,
+        .loop_depth = 0
     };
     print_str("[DEBUG] Before generate_runtime_init_minimal\n");
     // Initialize runtime with minimal setup

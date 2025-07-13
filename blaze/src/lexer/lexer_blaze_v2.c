@@ -181,6 +181,12 @@ static uint32_t parse_identifier(const char* input, uint32_t pos, uint32_t len, 
     } else if (word_len == 9 && match_string(input, start, len, "immutable")) {
         // Immutable variable keyword
         tok->type = TOK_IMMUTABLE;
+    } else if (word_len == 5 && match_string(input, start, len, "break")) {
+        // Break statement keyword
+        tok->type = TOK_BREAK;
+    } else if (word_len == 8 && match_string(input, start, len, "continue")) {
+        // Continue statement keyword
+        tok->type = TOK_CONTINUE;
     } else if (word_len == 4 && match_string(input, start, len, "func")) {
         // Check if this is followed by .can
         if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "can")) {
@@ -1413,6 +1419,8 @@ void debug_print_tokens(Token* tokens, uint32_t count, const char* source) {
             case TOK_INCREMENT: print_str("INCREMENT"); break;
             case TOK_DECREMENT: print_str("DECREMENT"); break;
             case TOK_QUESTION: print_str("QUESTION"); break;
+            case TOK_BREAK: print_str("BREAK"); break;
+            case TOK_CONTINUE: print_str("CONTINUE"); break;
             case TOK_EOF: print_str("EOF"); break;
             default: 
                 print_str("TOK(");

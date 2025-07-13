@@ -1,0 +1,11 @@
+# Simple break test with Blaze syntax
+var.i-i-[0]/
+f.whl-[i < 5]/
+print/ i \
+if (i == 2) {
+    break
+}
+var.i-i-[i + 1]/
+\
+print/ "Done\!" \
+EOF < /dev/null

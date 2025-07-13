@@ -1692,6 +1692,9 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
             // Label for loop start
             uint32_t loop_start = buf->position;
             
+            // Push loop context for break/continue support
+            push_loop_context(buf, loop_start);
+            
             // Generate condition check
             if (condition_idx != 0) {
                 print_str("[WHILE] Generating condition expression\n");
@@ -1704,6 +1707,9 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                 // Jump to end if condition is false (RAX == 0)
                 emit_je_rel32(buf, 0); // We'll patch this offset later
                 uint32_t exit_jump_pos = buf->position - 4; // Remember where to patch
+                
+                // Set loop exit position for break statements
+                set_loop_exit_position(buf, exit_jump_pos);
                 
                 // Generate loop body - follow statement chain
                 if (body_idx != 0) {
@@ -1744,6 +1750,9 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                 
                 print_str("[WHILE] Loop generation complete\n");
             }
+            
+            // Pop loop context
+            pop_loop_context(buf);
             break;
         }
         
@@ -1762,6 +1771,9 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
             // Label for loop start
             uint32_t loop_start = buf->position;
             
+            // Push loop context for break/continue support
+            push_loop_context(buf, loop_start);
+            
             // Generate condition check
             uint16_t condition_idx = stmt_node->data.for_loop.condition_idx;
             if (condition_idx != 0) {
@@ -1774,6 +1786,9 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                 // Jump to end if condition is false (RAX == 0)
                 emit_je_rel32(buf, 0); // We'll patch this offset later
                 uint32_t exit_jump_pos = buf->position - 4; // Remember where to patch
+                
+                // Set loop exit position for break statements
+                set_loop_exit_position(buf, exit_jump_pos);
                 
                 // Generate loop body - follow statement chain
                 uint16_t body_idx = stmt_node->data.for_loop.body_idx;
@@ -1811,8 +1826,21 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                 buf->code[exit_jump_pos + 2] = (exit_offset >> 16) & 0xFF;
                 buf->code[exit_jump_pos + 3] = (exit_offset >> 24) & 0xFF;
             }
+            
+            // Pop loop context
+            pop_loop_context(buf);
             break;
         }
+        
+        case NODE_BREAK:
+            print_str("[STMT] Generating break statement\n");
+            generate_break_jump(buf);
+            break;
+            
+        case NODE_CONTINUE:
+            print_str("[STMT] Generating continue statement\n");
+            generate_continue_jump(buf);
+            break;
             
         default:
             print_str("CODEGEN_ERROR: Unsupported statement type ");
@@ -1960,5 +1988,86 @@ void generate_conditional(CodeBuffer* buf, ASTNode* nodes, uint16_t cond_idx,
         print_str("[COND] Unsupported conditional type ");
         print_num(cond_type);
         print_str("\n");
+    }
+}
+
+// Loop context management functions for break/continue support
+
+void push_loop_context(CodeBuffer* buf, uint32_t loop_start) {
+    if (buf->loop_depth < 16) {
+        buf->loop_context_stack[buf->loop_depth].loop_start = loop_start;
+        buf->loop_context_stack[buf->loop_depth].loop_exit = 0;
+        buf->loop_context_stack[buf->loop_depth].has_loop_exit = false;
+        buf->loop_depth++;
+        print_str("[LOOP] Pushed loop context, depth=");
+        print_num(buf->loop_depth);
+        print_str(" start=");
+        print_num(loop_start);
+        print_str("\n");
+    } else {
+        print_str("[LOOP] ERROR: Maximum loop nesting depth exceeded\n");
+    }
+}
+
+void set_loop_exit_position(CodeBuffer* buf, uint32_t exit_pos) {
+    if (buf->loop_depth > 0) {
+        buf->loop_context_stack[buf->loop_depth - 1].loop_exit = exit_pos;
+        buf->loop_context_stack[buf->loop_depth - 1].has_loop_exit = true;
+        print_str("[LOOP] Set loop exit position=");
+        print_num(exit_pos);
+        print_str(" for depth=");
+        print_num(buf->loop_depth - 1);
+        print_str("\n");
+    } else {
+        print_str("[LOOP] ERROR: No loop context to set exit position\n");
+    }
+}
+
+void pop_loop_context(CodeBuffer* buf) {
+    if (buf->loop_depth > 0) {
+        buf->loop_depth--;
+        print_str("[LOOP] Popped loop context, depth now=");
+        print_num(buf->loop_depth);
+        print_str("\n");
+    } else {
+        print_str("[LOOP] ERROR: No loop context to pop\n");
+    }
+}
+
+void generate_break_jump(CodeBuffer* buf) {
+    if (buf->loop_depth > 0) {
+        uint32_t current_loop = buf->loop_depth - 1;
+        if (buf->loop_context_stack[current_loop].has_loop_exit) {
+            uint32_t exit_pos = buf->loop_context_stack[current_loop].loop_exit;
+            // Calculate relative offset to loop exit
+            int32_t offset = (int32_t)exit_pos - (int32_t)buf->position - 5;
+            emit_jmp_rel32(buf, offset);
+            print_str("[BREAK] Generated break jump to exit position=");
+            print_num(exit_pos);
+            print_str(" offset=");
+            print_num(offset);
+            print_str("\n");
+        } else {
+            print_str("[BREAK] ERROR: No loop exit position set for current loop\n");
+        }
+    } else {
+        print_str("[BREAK] ERROR: Break statement not inside a loop\n");
+    }
+}
+
+void generate_continue_jump(CodeBuffer* buf) {
+    if (buf->loop_depth > 0) {
+        uint32_t current_loop = buf->loop_depth - 1;
+        uint32_t loop_start = buf->loop_context_stack[current_loop].loop_start;
+        // Calculate relative offset to loop start (condition check)
+        int32_t offset = (int32_t)loop_start - (int32_t)buf->position - 5;
+        emit_jmp_rel32(buf, offset);
+        print_str("[CONTINUE] Generated continue jump to start position=");
+        print_num(loop_start);
+        print_str(" offset=");
+        print_num(offset);
+        print_str("\n");
+    } else {
+        print_str("[CONTINUE] ERROR: Continue statement not inside a loop\n");
     }
 }

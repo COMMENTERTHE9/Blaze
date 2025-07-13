@@ -392,6 +392,10 @@ typedef enum {
     TOK_CONST_KW,        // const (keyword)
     TOK_IMMUTABLE,       // immutable
     
+    // Control flow
+    TOK_BREAK,           // break (loop control)
+    TOK_CONTINUE,        // continue (loop control)
+    
     // Control
     TOK_EOF,
     TOK_ERROR,
@@ -441,6 +445,14 @@ typedef struct {
     
     // Target platform for code generation
     Platform target_platform;
+    
+    // Loop context tracking for break/continue
+    struct {
+        uint32_t loop_start;     // Position of loop condition check (for continue)
+        uint32_t loop_exit;      // Position where loop exit jump will be patched (for break)
+        bool has_loop_exit;      // Whether we have a valid loop exit position
+    } loop_context_stack[16];    // Support nested loops up to 16 levels
+    uint8_t loop_depth;          // Current loop nesting depth
 } CodeBuffer;
 
 // GGGX computation state
@@ -498,6 +510,8 @@ typedef enum {
     NODE_COMPOUND_ASSIGN,
     NODE_WHILE_LOOP,
     NODE_FOR_LOOP,
+    NODE_BREAK,
+    NODE_CONTINUE,
     NODE_NULL,
     NODE_UNDEFINED,
     NODE_VOID,
@@ -624,6 +638,16 @@ typedef struct ASTNode {
             uint16_t increment_idx;     // Increment expression
             uint16_t body_idx;          // Loop body statement block
         } for_loop;
+        
+        // Break statement (no additional data needed)
+        struct {
+            uint16_t loop_depth;        // Depth of loop to break from (0 = innermost)
+        } break_stmt;
+        
+        // Continue statement (no additional data needed)
+        struct {
+            uint16_t loop_depth;        // Depth of loop to continue (0 = innermost)
+        } continue_stmt;
         
         // Boolean value
         struct {
@@ -922,6 +946,13 @@ bool is_var_float(const char* name);
 bool is_var_solid(const char* name);
 
 void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx, SymbolTable* symbols, char* string_pool);
+
+// Loop context management functions for break/continue
+void push_loop_context(CodeBuffer* buf, uint32_t loop_start);
+void set_loop_exit_position(CodeBuffer* buf, uint32_t exit_pos);
+void pop_loop_context(CodeBuffer* buf);
+void generate_break_jump(CodeBuffer* buf);
+void generate_continue_jump(CodeBuffer* buf);
 
 // GGGX trace management functions
 void* gggx_alloc_trace(uint64_t size);

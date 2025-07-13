@@ -1,0 +1,68 @@
+# Comprehensive Break/Continue Test Cases
+
+var.i-i-[0]/
+while (i < 10) {
+    print/ i \
+    if (i == 3) {
+        break
+    }
+    var.i-i-[i + 1]/
+}
+print/ "After while loop with break" \
+
+var.i-j-[0]/
+while (j < 5) {
+    var.i-j-[j + 1]/
+    if (j == 2) {
+        continue
+    }
+    print/ j \
+}
+
+for (var.i-k-[0]; k < 10; var.i-k-[k + 1]) {
+    if (k == 4) {
+        print/ "Breaking at k=" \
+        print/ k \
+        break
+    }
+    print/ "k=" \
+    print/ k \
+}
+
+for (var.i-m-[0]; m < 5; var.i-m-[m + 1]) {
+    if (m == 2) {
+        continue
+    }
+    print/ "m=" \
+    print/ m \
+}
+
+var.i-x-[0]/
+while (x < 3) {
+    print/ "Outer loop x=" \
+    print/ x \
+    
+    var.i-y-[0]/
+    while (y < 5) {
+        if (y == 2) {
+            var.i-y-[y + 1]/
+            continue
+        }
+        if (y == 4) {
+            break
+        }
+        print/ "  Inner loop y=" \
+        print/ y \
+        var.i-y-[y + 1]/
+    }
+    
+    if (x == 1) {
+        var.i-x-[x + 1]/
+        continue
+    }
+    
+    var.i-x-[x + 1]/
+}
+
+print/ "All break/continue tests completed\!" \
+EOF < /dev/null
