@@ -1785,7 +1785,8 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                         ASTNode* current_node = &nodes[current_stmt];
                         if (current_node->type == NODE_BINARY_OP || current_node->type == NODE_OUTPUT || 
                             current_node->type == NODE_IDENTIFIER || current_node->type == NODE_NUMBER || 
-                            current_node->type == NODE_FLOAT || current_node->type == NODE_VAR_DEF) {
+                            current_node->type == NODE_FLOAT || current_node->type == NODE_VAR_DEF ||
+                            current_node->type == NODE_WHILE_LOOP || current_node->type == NODE_FOR_LOOP) {
                             current_stmt = current_node->data.binary.right_idx;
                         } else {
                             break; // End of chain
@@ -1796,7 +1797,7 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
                 // Generate increment
                 uint16_t increment_idx = stmt_node->data.for_loop.increment_idx;
                 if (increment_idx != 0) {
-                    generate_expression(buf, nodes, increment_idx, symbols, string_pool);
+                    generate_statement(buf, nodes, increment_idx, symbols, string_pool);
                 }
                 
                 // Jump back to condition check
