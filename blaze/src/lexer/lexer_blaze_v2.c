@@ -202,6 +202,34 @@ static uint32_t parse_identifier(const char* input, uint32_t pos, uint32_t len, 
     } else if (word_len == 7 && match_string(input, start, len, "default")) {
         // Default case keyword
         tok->type = TOK_DEFAULT;
+    } else if (word_len == 4 && match_string(input, start, len, "nest")) {
+        // Check if this is followed by .array
+        if (pos + 6 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "array")) {
+            tok->type = TOK_NESTED_ARRAY;
+            tok->len = 10; // "nest.array"
+            return pos + 6; // Skip the .array part
+        }
+    } else if (word_len == 5 && match_string(input, start, len, "array")) {
+        // Check if this is followed by .1d, .2d, .3d, or .4d
+        if (pos + 3 < len && input[pos] == '.') {
+            if (pos + 3 < len && input[pos + 1] == '1' && input[pos + 2] == 'd') {
+                tok->type = TOK_ARRAY_1D;
+                tok->len = 8; // "array.1d"
+                return pos + 3; // Skip the .1d part
+            } else if (pos + 3 < len && input[pos + 1] == '2' && input[pos + 2] == 'd') {
+                tok->type = TOK_ARRAY_2D;
+                tok->len = 8; // "array.2d"
+                return pos + 3; // Skip the .2d part
+            } else if (pos + 3 < len && input[pos + 1] == '3' && input[pos + 2] == 'd') {
+                tok->type = TOK_ARRAY_3D;
+                tok->len = 8; // "array.3d"
+                return pos + 3; // Skip the .3d part
+            } else if (pos + 3 < len && input[pos + 1] == '4' && input[pos + 2] == 'd') {
+                tok->type = TOK_ARRAY_4D;
+                tok->len = 8; // "array.4d"
+                return pos + 3; // Skip the .4d part
+            }
+        }
     } else if (word_len == 4 && match_string(input, start, len, "func")) {
         // Check if this is followed by .can
         if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "can")) {
@@ -215,6 +243,63 @@ static uint32_t parse_identifier(const char* input, uint32_t pos, uint32_t len, 
             tok->type = TOK_FUNC_CAN;
             tok->len = pos + 4 - start; // Include the .can part
             return pos + 4;
+        }
+    } else if (word_len == 4 && match_string(input, start, len, "file")) {
+        // Check for file I/O operations
+        if (pos + 5 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "read")) {
+            tok->type = TOK_FILE_READ;
+            tok->len = pos + 5 - start; // Include the .read part
+            return pos + 5;
+        } else if (pos + 6 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "write")) {
+            tok->type = TOK_FILE_WRITE;
+            tok->len = pos + 6 - start; // Include the .write part
+            return pos + 6;
+        } else if (pos + 7 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "append")) {
+            tok->type = TOK_FILE_APPEND;
+            tok->len = pos + 7 - start; // Include the .append part
+            return pos + 7;
+        } else if (pos + 7 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "exists")) {
+            tok->type = TOK_FILE_EXISTS;
+            tok->len = pos + 7 - start; // Include the .exists part
+            return pos + 7;
+        } else if (pos + 7 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "delete")) {
+            tok->type = TOK_FILE_DELETE;
+            tok->len = pos + 7 - start; // Include the .delete part
+            return pos + 7;
+        } else if (pos + 5 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "info")) {
+            tok->type = TOK_FILE_INFO;
+            tok->len = pos + 5 - start; // Include the .info part
+            return pos + 5;
+        }
+    } else if (word_len == 3 && match_string(input, start, len, "net")) {
+        // Check for network I/O operations
+        if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "get")) {
+            tok->type = TOK_NET_GET;
+            tok->len = pos + 4 - start; // Include the .get part
+            return pos + 4;
+        } else if (pos + 5 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "post")) {
+            tok->type = TOK_NET_POST;
+            tok->len = pos + 5 - start; // Include the .post part
+            return pos + 5;
+        } else if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "put")) {
+            tok->type = TOK_NET_PUT;
+            tok->len = pos + 4 - start; // Include the .put part
+            return pos + 4;
+        }
+    } else if (word_len == 3 && match_string(input, start, len, "sys")) {
+        // Check for system I/O operations
+        if (pos + 4 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "env")) {
+            tok->type = TOK_SYS_ENV;
+            tok->len = pos + 4 - start; // Include the .env part
+            return pos + 4;
+        } else if (pos + 5 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "time")) {
+            tok->type = TOK_SYS_TIME;
+            tok->len = pos + 5 - start; // Include the .time part
+            return pos + 5;
+        } else if (pos + 5 < len && input[pos] == '.' && match_string(input, pos + 1, len - (pos + 1), "exec")) {
+            tok->type = TOK_SYS_EXEC;
+            tok->len = pos + 5 - start; // Include the .exec part
+            return pos + 5;
         }
     } else if (word_len == 4 && match_string(input, start, len, "gggx")) {
         // Check for GGGX commands
@@ -514,9 +599,21 @@ static uint32_t parse_time_bridge(const char* input, uint32_t pos, uint32_t len,
     return 0;
 }
 
-// Parse array: array.4d
+// Parse array: array.1d, array.2d, array.3d, array.4d
 static uint32_t parse_array(const char* input, uint32_t pos, uint32_t len, Token* tok) {
-    if (match_string(input, pos, len, "array.4d")) {
+    if (match_string(input, pos, len, "array.1d")) {
+        tok->type = TOK_ARRAY_1D;
+        tok->len = 8;
+        return pos + 8;
+    } else if (match_string(input, pos, len, "array.2d")) {
+        tok->type = TOK_ARRAY_2D;
+        tok->len = 8;
+        return pos + 8;
+    } else if (match_string(input, pos, len, "array.3d")) {
+        tok->type = TOK_ARRAY_3D;
+        tok->len = 8;
+        return pos + 8;
+    } else if (match_string(input, pos, len, "array.4d")) {
         tok->type = TOK_ARRAY_4D;
         tok->len = 8;
         return pos + 8;

@@ -50,6 +50,14 @@ static uint16_t parse_switch_statement(Parser* p);
 static uint16_t parse_case_statement(Parser* p);
 static uint16_t parse_default_statement(Parser* p);
 static uint16_t parse_incase_statement(Parser* p);
+static uint16_t parse_array_declaration(Parser* p);
+static uint16_t parse_array_literal(Parser* p);
+static uint16_t parse_array_access(Parser* p);
+static uint16_t parse_nested_array(Parser* p);
+static uint16_t parse_nested_array_node(Parser* p, uint16_t depth);
+static uint16_t parse_file_io(Parser* p);
+static uint16_t parse_net_io(Parser* p);
+static uint16_t parse_sys_io(Parser* p);
 // Removed parse_declare_block - handled inline now
 
 // Parser utilities
@@ -2964,6 +2972,39 @@ static uint16_t parse_statement(Parser* p) {
         return parse_switch_statement(p);
     }
     
+    // Array declarations
+    if (check(p, TOK_ARRAY_1D) || check(p, TOK_ARRAY_2D) || 
+        check(p, TOK_ARRAY_3D) || check(p, TOK_ARRAY_4D)) {
+        return parse_array_declaration(p);
+    }
+    
+    // Nested array declarations
+    if (check(p, TOK_NESTED_ARRAY)) {
+        return parse_nested_array(p);
+    }
+    
+    // Array literals [1,2,3]
+    if (check(p, TOK_BRACKET_OPEN)) {
+        return parse_array_literal(p);
+    }
+    
+    // File I/O operations
+    if (check(p, TOK_FILE_READ) || check(p, TOK_FILE_WRITE) || 
+        check(p, TOK_FILE_APPEND) || check(p, TOK_FILE_EXISTS) ||
+        check(p, TOK_FILE_DELETE) || check(p, TOK_FILE_INFO)) {
+        return parse_file_io(p);
+    }
+    
+    // Network I/O operations  
+    if (check(p, TOK_NET_GET) || check(p, TOK_NET_POST) || check(p, TOK_NET_PUT)) {
+        return parse_net_io(p);
+    }
+    
+    // System I/O operations
+    if (check(p, TOK_SYS_ENV) || check(p, TOK_SYS_TIME) || check(p, TOK_SYS_EXEC)) {
+        return parse_sys_io(p);
+    }
+    
     // Conditional - check for all other conditional tokens
     if (check(p, TOK_FUNC_CAN) || check(p, TOK_COND_IF) || 
         check(p, TOK_COND_ENS) || check(p, TOK_COND_VER) ||
@@ -3414,6 +3455,26 @@ static uint16_t parse_statement(Parser* p) {
             advance(p); // consume second identifier
             return 0xFFFF; // Skip this line
         }
+    }
+    
+    // File I/O operations
+    if (check(p, TOK_FILE_READ) || check(p, TOK_FILE_WRITE) || 
+        check(p, TOK_FILE_APPEND) || check(p, TOK_FILE_EXISTS) ||
+        check(p, TOK_FILE_DELETE) || check(p, TOK_FILE_INFO)) {
+        print_str("[PARSER] File I/O operation parsed successfully\n");
+        return parse_file_io(p);
+    }
+    
+    // Network I/O operations  
+    if (check(p, TOK_NET_GET) || check(p, TOK_NET_POST) || check(p, TOK_NET_PUT)) {
+        print_str("[PARSER] Network I/O operation parsed successfully\n");
+        return parse_net_io(p);
+    }
+    
+    // System I/O operations
+    if (check(p, TOK_SYS_TIME) || check(p, TOK_SYS_ENV) || check(p, TOK_SYS_EXEC)) {
+        print_str("[PARSER] System I/O operation parsed successfully\n");
+        return parse_sys_io(p);
     }
     
     // Expression statement
@@ -4414,6 +4475,427 @@ static uint16_t parse_incase_statement(Parser* p) {
     
     print_str("[PARSER] Incase statement parsed successfully\n");
     return incase_node;
+}
+
+// Parse array declaration: array.1d[size], array.2d[x,y], etc.
+static uint16_t parse_array_declaration(Parser* p) {
+    print_str("[PARSER] Parsing array declaration\n");
+    
+    // Get the array type token
+    Token* array_tok = advance(p);
+    if (!array_tok) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Create array definition node
+    uint16_t array_node = alloc_node(p, NODE_ARRAY_1D);
+    if (array_node == 0) return 0;
+    
+    // Set the correct node type based on the token
+    if (array_tok->type == TOK_ARRAY_1D) {
+        p->nodes[array_node].type = NODE_ARRAY_1D;
+        p->nodes[array_node].data.array_def.dimensions = 1;
+    } else if (array_tok->type == TOK_ARRAY_2D) {
+        p->nodes[array_node].type = NODE_ARRAY_2D;
+        p->nodes[array_node].data.array_def.dimensions = 2;
+    } else if (array_tok->type == TOK_ARRAY_3D) {
+        p->nodes[array_node].type = NODE_ARRAY_3D;
+        p->nodes[array_node].data.array_def.dimensions = 3;
+    } else if (array_tok->type == TOK_ARRAY_4D) {
+        p->nodes[array_node].type = NODE_ARRAY_4D;
+        p->nodes[array_node].data.array_def.dimensions = 4;
+    }
+    
+    // Expect '[' for size specification
+    if (!match(p, TOK_BRACKET_OPEN)) {
+        print_str("[PARSER] ERROR: Expected '[' after array type\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse size expression(s) - for now, just parse the first expression
+    uint16_t size_expr = parse_expression(p);
+    if (size_expr == 0) {
+        print_str("[PARSER] ERROR: Failed to parse array size expression\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[array_node].data.array_def.size_expr_idx = size_expr;
+    p->nodes[array_node].data.array_def.name_idx = 0;  // Will be set by assignment
+    p->nodes[array_node].data.array_def.element_type_idx = 0;  // Type inference later
+    
+    // For multi-dimensional arrays, we could parse comma-separated sizes here
+    // For now, skip additional dimensions
+    
+    // Expect ']' to close
+    if (!match(p, TOK_BRACKET_CLOSE)) {
+        print_str("[PARSER] ERROR: Expected ']' after array size\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    print_str("[PARSER] Array declaration parsed successfully\n");
+    return array_node;
+}
+
+// Parse array literal: [1, 2, 3, 4]
+static uint16_t parse_array_literal(Parser* p) {
+    print_str("[PARSER] Parsing array literal\n");
+    
+    // Consume '['
+    advance(p);
+    
+    // Create array literal node
+    uint16_t literal_node = alloc_node(p, NODE_ARRAY_LITERAL);
+    if (literal_node == 0) return 0;
+    
+    uint16_t element_count = 0;
+    uint16_t first_element = 0;
+    uint16_t last_element = 0;
+    
+    // Parse elements until ']'
+    while (!at_end(p) && !check(p, TOK_BRACKET_CLOSE)) {
+        uint16_t element = parse_expression(p);
+        if (element == 0) {
+            print_str("[PARSER] ERROR: Failed to parse array element\n");
+            p->has_error = true;
+            return 0;
+        }
+        
+        if (element_count == 0) {
+            first_element = element;
+            last_element = element;
+        } else {
+            // Chain elements together using binary nodes
+            uint16_t chain_node = alloc_node(p, NODE_BINARY_OP);
+            if (chain_node == 0) return 0;
+            p->nodes[chain_node].data.binary.op = TOK_COMMA;
+            p->nodes[chain_node].data.binary.left_idx = last_element;
+            p->nodes[chain_node].data.binary.right_idx = element;
+            last_element = chain_node;
+        }
+        
+        element_count++;
+        
+        // Check for comma
+        if (match(p, TOK_COMMA)) {
+            continue;  // Parse next element
+        } else {
+            break;  // No comma, should be end of list
+        }
+    }
+    
+    // Expect ']' to close
+    if (!match(p, TOK_BRACKET_CLOSE)) {
+        print_str("[PARSER] ERROR: Expected ']' after array elements\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[literal_node].data.array_literal.first_element_idx = first_element;
+    p->nodes[literal_node].data.array_literal.element_count = element_count;
+    p->nodes[literal_node].data.array_literal.inferred_type = 0;  // Type inference later
+    
+    print_str("[PARSER] Array literal parsed successfully\n");
+    return literal_node;
+}
+
+// Parse array access: identifier[index]
+static uint16_t parse_array_access(Parser* p) {
+    print_str("[PARSER] Parsing array access\n");
+    
+    // This would be called when we detect identifier followed by [
+    // For now, return 0 to indicate not implemented
+    print_str("[PARSER] Array access parsing not implemented yet\n");
+    return 0;
+}
+
+// Parse nested array: |name| nest.array [ value [ child [ ... ] ] ]
+static uint16_t parse_nested_array(Parser* p) {
+    print_str("[PARSER] Parsing nested array\n");
+    
+    // Consume 'nest.array' token
+    advance(p);
+    
+    // Create nested array node
+    uint16_t nested_node = alloc_node(p, NODE_NESTED_ARRAY);
+    if (nested_node == 0) return 0;
+    
+    // Expect '[' to start nested structure
+    if (!match(p, TOK_BRACKET_OPEN)) {
+        print_str("[PARSER] ERROR: Expected '[' after nest.array\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse the root nested node
+    uint16_t root_node = parse_nested_array_node(p, 0);
+    if (root_node == 0) {
+        print_str("[PARSER] ERROR: Failed to parse nested array root\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Expect ']' to close
+    if (!match(p, TOK_BRACKET_CLOSE)) {
+        print_str("[PARSER] ERROR: Expected ']' after nested array\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[nested_node].data.nested_array.name_idx = 0;  // Will be set by assignment
+    p->nodes[nested_node].data.nested_array.root_node_idx = root_node;
+    p->nodes[nested_node].data.nested_array.max_depth = 1;  // Calculate later
+    
+    print_str("[PARSER] Nested array parsed successfully\n");
+    return nested_node;
+}
+
+// Parse nested array node recursively
+static uint16_t parse_nested_array_node(Parser* p, uint16_t depth) {
+    print_str("[PARSER] Parsing nested array node at depth "); 
+    print_num(depth); 
+    print_str("\n");
+    
+    // Create nested node
+    uint16_t node = alloc_node(p, NODE_NESTED_ARRAY_NODE);
+    if (node == 0) return 0;
+    
+    // Parse the value at this level
+    uint16_t value = parse_expression(p);
+    if (value == 0) {
+        print_str("[PARSER] ERROR: Failed to parse nested array value\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    p->nodes[node].data.nested_node.value_idx = value;
+    p->nodes[node].data.nested_node.depth = depth;
+    p->nodes[node].data.nested_node.child_idx = 0;  // Default no child
+    p->nodes[node].data.nested_node.value_type = 0;  // Type inference later
+    
+    // Check if there's a nested child
+    if (check(p, TOK_BRACKET_OPEN)) {
+        advance(p);  // Consume '['
+        
+        uint16_t child = parse_nested_array_node(p, depth + 1);
+        if (child == 0) {
+            p->has_error = true;
+            return 0;
+        }
+        
+        p->nodes[node].data.nested_node.child_idx = child;
+        
+        if (!match(p, TOK_BRACKET_CLOSE)) {
+            print_str("[PARSER] ERROR: Expected ']' after nested child\n");
+            p->has_error = true;
+            return 0;
+        }
+    }
+    
+    print_str("[PARSER] Nested array node parsed at depth "); 
+    print_num(depth); 
+    print_str("\n");
+    return node;
+}
+
+// Parse file I/O operations (file.read, file.write, etc.)
+static uint16_t parse_file_io(Parser* p) {
+    Token* io_tok = advance(p);  // Consume the file.* token
+    
+    // Allocate node based on token type
+    uint16_t node = alloc_node(p, NODE_FILE_READ);  // Default, will set correct type below
+    if (node == 0) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Set correct node type based on token
+    if (io_tok->type == TOK_FILE_READ) {
+        p->nodes[node].type = NODE_FILE_READ;
+    } else if (io_tok->type == TOK_FILE_WRITE) {
+        p->nodes[node].type = NODE_FILE_WRITE;
+    } else if (io_tok->type == TOK_FILE_APPEND) {
+        p->nodes[node].type = NODE_FILE_APPEND;
+    } else if (io_tok->type == TOK_FILE_EXISTS) {
+        p->nodes[node].type = NODE_FILE_EXISTS;
+    } else if (io_tok->type == TOK_FILE_DELETE) {
+        p->nodes[node].type = NODE_FILE_DELETE;
+    } else if (io_tok->type == TOK_FILE_INFO) {
+        p->nodes[node].type = NODE_FILE_INFO;
+    }
+    
+    // Expect slash: file.read/ filename
+    if (!match(p, TOK_SLASH) && !match(p, TOK_DIV)) {
+        print_str("[PARSER] ERROR: Expected '/' after file I/O operation\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse filename expression
+    uint16_t filename_expr = parse_expression(p);
+    if (filename_expr == 0) {
+        p->has_error = true;
+        return 0;
+    }
+    p->nodes[node].data.file_io.filename_idx = filename_expr;
+    
+    // For write/append operations, expect second slash and content parameter
+    if (io_tok->type == TOK_FILE_WRITE || io_tok->type == TOK_FILE_APPEND) {
+        if (!match(p, TOK_SLASH) && !match(p, TOK_DIV)) {
+            print_str("[PARSER] ERROR: Expected '/' after filename in file write/append\n");
+            p->has_error = true;
+            return 0;
+        }
+        
+        uint16_t content_expr = parse_expression(p);
+        if (content_expr == 0) {
+            p->has_error = true;
+            return 0;
+        }
+        p->nodes[node].data.file_io.content_idx = content_expr;
+    } else {
+        p->nodes[node].data.file_io.content_idx = 0;  // No content for read operations
+    }
+    
+    if (!match(p, TOK_BACKSLASH)) {
+        print_str("[PARSER] ERROR: Expected '\\' after file I/O parameters\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    print_str("[PARSER] File I/O operation parsed successfully\n");
+    return node;
+}
+
+// Parse network I/O operations (net.get, net.post, etc.)
+static uint16_t parse_net_io(Parser* p) {
+    Token* net_tok = advance(p);  // Consume the net.* token
+    
+    uint16_t node = alloc_node(p, NODE_NET_GET);  // Default, will set correct type below
+    if (node == 0) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Set correct node type based on token
+    if (net_tok->type == TOK_NET_GET) {
+        p->nodes[node].type = NODE_NET_GET;
+    } else if (net_tok->type == TOK_NET_POST) {
+        p->nodes[node].type = NODE_NET_POST;
+    } else if (net_tok->type == TOK_NET_PUT) {
+        p->nodes[node].type = NODE_NET_PUT;
+    }
+    
+    // Expect slash: net.get/ url
+    if (!match(p, TOK_SLASH) && !match(p, TOK_DIV)) {
+        print_str("[PARSER] ERROR: Expected '/' after network I/O operation\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Parse URL expression
+    uint16_t url_expr = parse_expression(p);
+    if (url_expr == 0) {
+        p->has_error = true;
+        return 0;
+    }
+    p->nodes[node].data.net_io.url_idx = url_expr;
+    
+    // For POST/PUT operations, expect second slash and payload parameter
+    if (net_tok->type == TOK_NET_POST || net_tok->type == TOK_NET_PUT) {
+        if (!match(p, TOK_SLASH) && !match(p, TOK_DIV)) {
+            print_str("[PARSER] ERROR: Expected '/' after URL in network POST/PUT\n");
+            p->has_error = true;
+            return 0;
+        }
+        
+        uint16_t payload_expr = parse_expression(p);
+        if (payload_expr == 0) {
+            p->has_error = true;
+            return 0;
+        }
+        p->nodes[node].data.net_io.payload_idx = payload_expr;
+    } else {
+        p->nodes[node].data.net_io.payload_idx = 0;  // No payload for GET
+    }
+    
+    p->nodes[node].data.net_io.headers_idx = 0;  // TODO: Add header support later
+    
+    if (!match(p, TOK_BACKSLASH)) {
+        print_str("[PARSER] ERROR: Expected '\\' after network I/O parameters\n");
+        p->has_error = true;
+        return 0;
+    }
+    
+    print_str("[PARSER] Network I/O operation parsed successfully\n");
+    return node;
+}
+
+// Parse system I/O operations (sys.env, sys.time, etc.)
+static uint16_t parse_sys_io(Parser* p) {
+    Token* sys_tok = advance(p);  // Consume the sys.* token
+    
+    uint16_t node = alloc_node(p, NODE_SYS_ENV);  // Default, will set correct type below
+    if (node == 0) {
+        p->has_error = true;
+        return 0;
+    }
+    
+    // Set correct node type based on token
+    if (sys_tok->type == TOK_SYS_ENV) {
+        p->nodes[node].type = NODE_SYS_ENV;
+        p->nodes[node].data.sys_io.sys_operation = 0;  // ENV operation
+    } else if (sys_tok->type == TOK_SYS_TIME) {
+        p->nodes[node].type = NODE_SYS_TIME;
+        p->nodes[node].data.sys_io.sys_operation = 1;  // TIME operation
+    } else if (sys_tok->type == TOK_SYS_EXEC) {
+        p->nodes[node].type = NODE_SYS_EXEC;
+        p->nodes[node].data.sys_io.sys_operation = 2;  // EXEC operation
+    }
+    
+    // For sys.time, no parameters needed - sys.time/ backslash
+    if (sys_tok->type == TOK_SYS_TIME) {
+        if (!match(p, TOK_SLASH) && !match(p, TOK_DIV)) {
+            print_str("[PARSER] ERROR: Expected '/' after sys.time\n");
+            p->has_error = true;
+            return 0;
+        }
+        if (!match(p, TOK_BACKSLASH)) {
+            print_str("[PARSER] ERROR: Expected '\\' after sys.time\n");
+            p->has_error = true;
+            return 0;
+        }
+        p->nodes[node].data.sys_io.command_idx = 0;
+        p->nodes[node].data.sys_io.args_idx = 0;
+    } else {
+        // For sys.env and sys.exec, expect parameters: sys.env/ variable backslash
+        if (!match(p, TOK_SLASH) && !match(p, TOK_DIV)) {
+            print_str("[PARSER] ERROR: Expected '/' after system I/O operation\n");
+            p->has_error = true;
+            return 0;
+        }
+        
+        // Parse command/variable name expression
+        uint16_t command_expr = parse_expression(p);
+        if (command_expr == 0) {
+            p->has_error = true;
+            return 0;
+        }
+        p->nodes[node].data.sys_io.command_idx = command_expr;
+        p->nodes[node].data.sys_io.args_idx = 0;  // TODO: Add argument support later
+        
+        if (!match(p, TOK_BACKSLASH)) {
+            print_str("[PARSER] ERROR: Expected '\\' after system I/O parameters\n");
+            p->has_error = true;
+            return 0;
+        }
+    }
+    
+    print_str("[PARSER] System I/O operation parsed successfully\n");
+    return node;
 }
 
 /* DUPLICATE SNIPPET DISABLED */

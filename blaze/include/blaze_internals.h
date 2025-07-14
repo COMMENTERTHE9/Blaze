@@ -406,7 +406,32 @@ typedef enum {
     // Control
     TOK_EOF,
     TOK_ERROR,
-    TOK_RETURN           // return/ (function return statement)
+    TOK_RETURN,          // return/ (function return statement)
+    
+    // Array types and operations
+    TOK_ARRAY_1D,        // array.1d (1D array declaration)
+    TOK_ARRAY_2D,        // array.2d (2D array declaration)
+    TOK_ARRAY_3D,        // array.3d (3D array declaration)
+    TOK_ARRAY_LITERAL,   // [1,2,3] (array literal)
+    TOK_NESTED_ARRAY,    // nest.array (nested array declaration)
+    
+    // File I/O operations
+    TOK_FILE_READ,       // file.read (read from file)
+    TOK_FILE_WRITE,      // file.write (write to file)
+    TOK_FILE_APPEND,     // file.append (append to file)
+    TOK_FILE_EXISTS,     // file.exists (check if file exists)
+    TOK_FILE_DELETE,     // file.delete (delete file)
+    TOK_FILE_INFO,       // file.info (get file information)
+    
+    // Network I/O operations  
+    TOK_NET_GET,         // net.get (HTTP GET request)
+    TOK_NET_POST,        // net.post (HTTP POST request)
+    TOK_NET_PUT,         // net.put (HTTP PUT request)
+    
+    // System I/O operations
+    TOK_SYS_ENV,         // sys.env (environment variables)
+    TOK_SYS_TIME,        // sys.time (system time)
+    TOK_SYS_EXEC         // sys.exec (execute system command)
 } TokenType;
 
 // Token structure - minimal size
@@ -530,11 +555,38 @@ typedef enum {
     NODE_CASE,
     NODE_INCASE,
     NODE_DEFAULT,
-    NODE_CASE_LIST
+    NODE_CASE_LIST,
+    
+    // Array nodes
+    NODE_ARRAY_1D,
+    NODE_ARRAY_2D,
+    NODE_ARRAY_3D,
+    NODE_ARRAY_LITERAL,
+    NODE_ARRAY_ACCESS,
+    NODE_NESTED_ARRAY,
+    NODE_NESTED_ARRAY_NODE,
+    
+    // File I/O nodes
+    NODE_FILE_READ,
+    NODE_FILE_WRITE,
+    NODE_FILE_APPEND,
+    NODE_FILE_EXISTS,
+    NODE_FILE_DELETE,
+    NODE_FILE_INFO,
+    
+    // Network I/O nodes
+    NODE_NET_GET,
+    NODE_NET_POST,
+    NODE_NET_PUT,
+    
+    // System I/O nodes
+    NODE_SYS_ENV,
+    NODE_SYS_TIME,
+    NODE_SYS_EXEC
 } NodeType;
 
 // Define the maximum node type value
-#define NODE_TYPE_MAX (NODE_CASE_LIST + 1)
+#define NODE_TYPE_MAX (NODE_SYS_EXEC + 1)
 
 // AST Node - compact representation
 typedef struct ASTNode {
@@ -718,6 +770,66 @@ typedef struct ASTNode {
             uint16_t case_count;        // Number of cases
             uint16_t default_idx;       // Default case (0 = none)
         } case_list;
+        
+        // Array declarations (1D, 2D, 3D)
+        struct {
+            uint16_t name_idx;          // Array variable name
+            uint16_t size_expr_idx;     // Size expression(s)
+            uint8_t dimensions;         // 1, 2, or 3
+            uint16_t element_type_idx;  // Optional type specification
+        } array_def;
+        
+        // Array literal [1,2,3]
+        struct {
+            uint16_t first_element_idx; // First element in list
+            uint16_t element_count;     // Number of elements
+            uint8_t inferred_type;      // Inferred element type
+        } array_literal;
+        
+        // Array access arr[index]
+        struct {
+            uint16_t array_idx;         // Array being accessed
+            uint16_t index_expr_idx;    // Index expression
+        } array_access;
+        
+        // Nested array declaration
+        struct {
+            uint16_t name_idx;          // Nested array name
+            uint16_t root_node_idx;     // Root nested node
+            uint16_t max_depth;         // Maximum nesting depth
+        } nested_array;
+        
+        // Nested array node (single level in the hierarchy)
+        struct {
+            uint16_t value_idx;         // Value at this level
+            uint16_t child_idx;         // Child nested node (0 = none)
+            uint8_t value_type;         // Type of value at this level
+            uint16_t depth;             // Depth level (0-based)
+        } nested_node;
+        
+        // File I/O operations
+        struct {
+            uint16_t filename_idx;      // Path/filename expression
+            uint16_t content_idx;       // Content to write (for write/append)
+            uint8_t operation_mode;     // Read mode, write mode, etc.
+            uint16_t result_var_idx;    // Variable to store result (optional)
+        } file_io;
+        
+        // Network I/O operations  
+        struct {
+            uint16_t url_idx;           // URL expression
+            uint16_t payload_idx;       // POST/PUT payload (optional)
+            uint16_t headers_idx;       // HTTP headers (optional)
+            uint16_t result_var_idx;    // Variable to store response
+        } net_io;
+        
+        // System I/O operations
+        struct {
+            uint16_t command_idx;       // Command/variable name expression
+            uint16_t args_idx;          // Arguments (optional)
+            uint16_t result_var_idx;    // Variable to store result
+            uint8_t sys_operation;      // ENV, TIME, EXEC, etc.
+        } sys_io;
     } data;
 } ASTNode;
 

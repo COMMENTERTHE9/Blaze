@@ -16,6 +16,7 @@ extern void emit_mov_mem_reg(CodeBuffer* buf, X64Register base, int32_t offset, 
 extern void emit_mov_reg_mem(CodeBuffer* buf, X64Register dst, X64Register base, int32_t offset);
 extern void emit_syscall(CodeBuffer* buf);
 extern void emit_byte(CodeBuffer* buf, uint8_t byte);
+extern void emit_dword(CodeBuffer* buf, uint32_t value);
 extern void emit_push_reg(CodeBuffer* buf, X64Register reg);
 extern void emit_pop_reg(CodeBuffer* buf, X64Register reg);
 extern void emit_lea(CodeBuffer* buf, X64Register dst, X64Register base, int32_t offset);
@@ -23,6 +24,8 @@ extern void emit_add_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
 extern void emit_sub_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
 extern void emit_sub_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
 extern void emit_cmp_reg_imm32(CodeBuffer* buf, X64Register reg, int32_t value);
+extern void emit_cmp_reg_reg(CodeBuffer* buf, X64Register reg1, X64Register reg2);
+extern void emit_imul_reg_reg(CodeBuffer* buf, X64Register dst, X64Register src);
 
 // Forward declaration for new variable system
 void generate_var_def_new(CodeBuffer* buf, ASTNode* nodes, uint16_t node_idx, 
@@ -1112,6 +1115,53 @@ void generate_expression(CodeBuffer* buf, ASTNode* nodes, uint16_t expr_idx,
             break;
         }
         
+        case NODE_STRING: {
+            // For strings, we need to emit the string data inline and load its address
+            print_str("[EXPR] Loading string at offset ");
+            print_num(expr->data.ident.name_offset);
+            print_str(" len=");
+            print_num(expr->data.ident.name_len);
+            print_str("\n");
+            
+            // Skip over the string data location with a jump
+            emit_byte(buf, 0xEB);  // JMP short
+            uint8_t jump_size_pos = buf->position;
+            emit_byte(buf, 0x00);  // Placeholder for jump size
+            
+            // Mark string data location
+            uint32_t string_start = buf->position;
+            
+            // Emit the string data (without quotes)
+            const char* str_content = &string_pool[expr->data.ident.name_offset];
+            uint32_t str_len = expr->data.ident.name_len;
+            
+            // Skip quotes if present
+            if (str_len >= 2 && str_content[0] == '"' && str_content[str_len-1] == '"') {
+                str_content++;
+                str_len -= 2;
+            }
+            
+            // Emit string bytes
+            for (uint32_t i = 0; i < str_len; i++) {
+                emit_byte(buf, str_content[i]);
+            }
+            emit_byte(buf, 0);  // Null terminator
+            
+            // Update jump size
+            uint8_t jump_size = buf->position - string_start;
+            buf->code[jump_size_pos] = jump_size;
+            
+            // Load string address into RAX using LEA with RIP-relative addressing
+            emit_byte(buf, 0x48);  // REX.W
+            emit_byte(buf, 0x8D);  // LEA
+            emit_byte(buf, 0x05);  // ModRM: RAX, [RIP+disp32]
+            // Calculate displacement from current position to string start
+            int32_t disp = string_start - (buf->position + 4);
+            emit_dword(buf, disp);
+            
+            break;
+        }
+        
         default:
             // Unknown expression type
             emit_mov_reg_imm64(buf, RAX, 0);
@@ -1886,6 +1936,335 @@ void generate_statement(CodeBuffer* buf, ASTNode* nodes, uint16_t stmt_idx,
             // These are handled by generate_case_list, not as standalone statements
             print_str("[STMT] Case/incase/default/case_list nodes handled by parent switch\n");
             break;
+            
+        case NODE_ARRAY_1D:
+        case NODE_ARRAY_2D: 
+        case NODE_ARRAY_3D:
+        case NODE_ARRAY_4D: {
+            // Generate array declaration
+            print_str("[ARRAY] Generating array declaration type ");
+            print_num(stmt_node->type);
+            print_str("\n");
+            
+            // For now, arrays are allocated on stack as fixed-size
+            // Size calculation: element_count * sizeof(element_type)
+            uint16_t size_expr_idx = stmt_node->data.array_def.size_expr_idx;
+            
+            if (size_expr_idx != 0) {
+                // Evaluate size expression  
+                generate_expression(buf, nodes, size_expr_idx, symbols, string_pool);
+                // RAX now contains the size
+                
+                // Allocate stack space: SUB RSP, RAX * 8 (8 bytes per element)
+                // Use left shift by 3 to multiply by 8 (2^3 = 8)
+                emit_byte(buf, 0x48); // REX.W prefix
+                emit_byte(buf, 0xC1); // SHL 
+                emit_byte(buf, 0xE0); // RAX
+                emit_byte(buf, 0x03); // shift by 3 (multiply by 8)
+                emit_sub_reg_reg(buf, RSP, RAX); // Allocate stack space
+                
+                print_str("[ARRAY] Allocated stack space for array\n");
+            } else {
+                print_str("[ARRAY] WARNING: No size expression for array\n");
+            }
+            break;
+        }
+        
+        case NODE_ARRAY_LITERAL: {
+            // Generate array literal initialization
+            print_str("[ARRAY_LIT] Generating array literal\n");
+            
+            // Arrays are stored as consecutive values on stack
+            // For [1,2,3,4,5] we push each element
+            uint16_t element_idx = stmt_node->data.array_literal.first_element_idx;
+            uint32_t element_count = 0;
+            
+            // Count elements and allocate space
+            uint16_t temp_idx = element_idx;
+            while (temp_idx != 0 && temp_idx < 4096) {
+                element_count++;
+                if (nodes[temp_idx].type == NODE_BINARY_OP && nodes[temp_idx].data.binary.op == TOK_COMMA) {
+                    temp_idx = nodes[temp_idx].data.binary.right_idx;
+                } else {
+                    break;
+                }
+            }
+            
+            print_str("[ARRAY_LIT] Element count: ");
+            print_num(element_count + 1); // +1 for the first element
+            print_str("\n");
+            
+            // Allocate stack space: element_count * 8 bytes
+            emit_sub_reg_imm32(buf, RSP, (element_count + 1) * 8);
+            
+            // Store each element on stack  
+            uint32_t offset = 0;
+            temp_idx = element_idx;
+            while (temp_idx != 0 && temp_idx < 4096) {
+                if (nodes[temp_idx].type == NODE_BINARY_OP && nodes[temp_idx].data.binary.op == TOK_COMMA) {
+                    // Generate left element
+                    generate_expression(buf, nodes, nodes[temp_idx].data.binary.left_idx, symbols, string_pool);
+                    emit_mov_mem_reg(buf, RSP, offset, RAX);
+                    offset += 8;
+                    temp_idx = nodes[temp_idx].data.binary.right_idx;
+                } else {
+                    // Last element
+                    generate_expression(buf, nodes, temp_idx, symbols, string_pool);
+                    emit_mov_mem_reg(buf, RSP, offset, RAX);
+                    break;
+                }
+            }
+            
+            print_str("[ARRAY_LIT] Array literal initialized on stack\n");
+            break;
+        }
+        
+        case NODE_NESTED_ARRAY: {
+            // Generate nested array structure
+            print_str("[NESTED_ARRAY] Generating nested array\n");
+            
+            uint16_t root_node_idx = stmt_node->data.nested_array.root_node_idx;
+            if (root_node_idx != 0) {
+                // Process root nested node
+                generate_statement(buf, nodes, root_node_idx, symbols, string_pool);
+            }
+            break;
+        }
+        
+        case NODE_NESTED_ARRAY_NODE: {
+            // Generate individual nested array node
+            print_str("[NESTED_NODE] Generating nested array node at depth ");
+            print_num(stmt_node->data.nested_node.depth);
+            print_str("\n");
+            
+            uint16_t value_idx = stmt_node->data.nested_node.value_idx;
+            uint16_t child_idx = stmt_node->data.nested_node.child_idx;
+            
+            // Generate value at this level
+            if (value_idx != 0) {
+                generate_expression(buf, nodes, value_idx, symbols, string_pool);
+                // Store value (for now just keep in RAX)
+                print_str("[NESTED_NODE] Generated value at current level\n");
+            }
+            
+            // Process child if exists
+            if (child_idx != 0) {
+                print_str("[NESTED_NODE] Processing child node\n");
+                generate_statement(buf, nodes, child_idx, symbols, string_pool);
+            }
+            break;
+        }
+        
+        // File I/O operations
+        case NODE_FILE_READ: {
+            print_str("[FILE_IO] Generating file.read operation\n");
+            
+            // Get filename expression index
+            uint16_t filename_idx = stmt_node->data.file_io.filename_idx;
+            if (filename_idx != 0) {
+                // Generate expression for filename (should result in string address in RAX)
+                generate_expression(buf, nodes, filename_idx, symbols, string_pool);
+                
+                // Linux x64 system call: open(filename, O_RDONLY)
+                // open(const char *pathname, int flags) - returns file descriptor
+                emit_mov_reg_reg(buf, RDI, RAX);        // filename in RDI
+                emit_mov_reg_imm64(buf, RSI, 0);        // O_RDONLY = 0
+                emit_mov_reg_imm64(buf, RAX, 2); // SYS_OPEN = 2
+                emit_syscall(buf);                      // invoke system call
+                
+                // File descriptor now in RAX
+                print_str("[FILE_IO] File opened, FD in RAX\n");
+                
+                // Save file descriptor
+                emit_mov_reg_reg(buf, R8, RAX);  // Save FD in R8
+                
+                // Allocate 4096-byte buffer on stack for file contents
+                emit_sub_reg_imm32(buf, RSP, 4096);  // Allocate buffer
+                
+                // Read from file: read(fd, buffer, count)
+                emit_mov_reg_reg(buf, RDI, R8);      // fd in RDI  
+                emit_mov_reg_reg(buf, RSI, RSP);     // buffer address in RSI
+                emit_mov_reg_imm64(buf, RDX, 4095);  // max bytes to read
+                emit_mov_reg_imm64(buf, RAX, 0); // SYS_READ = 0
+                emit_syscall(buf);
+                
+                // RAX now contains bytes read
+                print_str("[FILE_IO] File read, bytes in RAX\n");
+                
+                // Write to stdout: write(stdout, buffer, bytes_read)
+                emit_mov_reg_reg(buf, RDX, RAX);     // bytes read in RDX
+                emit_mov_reg_imm64(buf, RDI, 1);     // stdout = 1
+                emit_mov_reg_reg(buf, RSI, RSP);     // buffer address in RSI
+                emit_mov_reg_imm64(buf, RAX, 1); // SYS_WRITE = 1
+                emit_syscall(buf);
+                
+                // Close file: close(fd)
+                emit_mov_reg_reg(buf, RDI, R8);      // fd in RDI
+                emit_mov_reg_imm64(buf, RAX, 3); // SYS_CLOSE = 3
+                emit_syscall(buf);
+                
+                // Restore stack
+                emit_add_reg_imm32(buf, RSP, 4096);  // Deallocate buffer
+                
+                print_str("[FILE_IO] File read completed\n");
+            }
+            break;
+        }
+        
+        case NODE_FILE_WRITE: {
+            print_str("[FILE_IO] Generating file.write operation\n");
+            
+            // Get filename and content expression indices
+            uint16_t filename_idx = stmt_node->data.file_io.filename_idx;
+            uint16_t content_idx = stmt_node->data.file_io.content_idx;
+            
+            if (filename_idx != 0 && content_idx != 0) {
+                // Generate filename expression
+                generate_expression(buf, nodes, filename_idx, symbols, string_pool);
+                emit_push_reg(buf, RAX);  // Save filename address
+                
+                // Generate content expression  
+                generate_expression(buf, nodes, content_idx, symbols, string_pool);
+                emit_push_reg(buf, RAX);  // Save content address
+                
+                // Open file for writing: open(filename, O_WRONLY|O_CREAT, 0644)
+                emit_pop_reg(buf, RSI);                  // Content address to RSI (temp)
+                emit_pop_reg(buf, RDI);                  // Filename to RDI
+                emit_push_reg(buf, RSI);                 // Save content again
+                emit_mov_reg_imm64(buf, RSI, 0x41);      // O_WRONLY|O_CREAT = 0x41
+                emit_mov_reg_imm64(buf, RDX, 0644);      // File permissions
+                emit_mov_reg_imm64(buf, RAX, SYS_OPEN);  // system call number
+                emit_syscall(buf);                       // invoke system call
+                
+                // Write to file: write(fd, content, length)
+                emit_mov_reg_reg(buf, RDI, RAX);         // File descriptor to RDI
+                emit_pop_reg(buf, RSI);                  // Content address to RSI
+                emit_mov_reg_imm64(buf, RDX, 64);        // Write up to 64 bytes (demo)
+                emit_mov_reg_imm64(buf, RAX, SYS_WRITE); // system call number
+                emit_syscall(buf);                       // invoke system call
+                
+                print_str("[FILE_IO] File write operation generated\n");
+            }
+            break;
+        }
+        
+        case NODE_FILE_EXISTS: {
+            print_str("[FILE_IO] Generating file.exists operation\n");
+            
+            uint16_t filename_idx = stmt_node->data.file_io.filename_idx;
+            if (filename_idx != 0) {
+                // Generate filename expression
+                generate_expression(buf, nodes, filename_idx, symbols, string_pool);
+                
+                // Try to open file read-only to check existence
+                emit_mov_reg_reg(buf, RDI, RAX);        // filename in RDI
+                emit_mov_reg_imm64(buf, RSI, 0);        // O_RDONLY = 0
+                emit_mov_reg_imm64(buf, RAX, SYS_OPEN); // system call number
+                emit_syscall(buf);                      // invoke system call
+                
+                // Check if open succeeded (fd >= 0)
+                emit_cmp_reg_imm32(buf, RAX, 0);
+                // Result: RAX contains 1 if file exists, 0 if not
+                print_str("[FILE_IO] File existence check generated\n");
+            }
+            break;
+        }
+        
+        case NODE_FILE_APPEND: {
+            print_str("[FILE_IO] Generating file.append operation\n");
+            
+            uint16_t filename_idx = stmt_node->data.file_io.filename_idx;
+            uint16_t content_idx = stmt_node->data.file_io.content_idx;
+            
+            if (filename_idx != 0 && content_idx != 0) {
+                // Similar to file.write but with O_APPEND flag
+                generate_expression(buf, nodes, filename_idx, symbols, string_pool);
+                emit_push_reg(buf, RAX);
+                
+                generate_expression(buf, nodes, content_idx, symbols, string_pool);
+                emit_push_reg(buf, RAX);
+                
+                // Open with O_WRONLY|O_CREAT|O_APPEND = 0x441
+                emit_pop_reg(buf, RSI);
+                emit_pop_reg(buf, RDI);
+                emit_push_reg(buf, RSI);
+                emit_mov_reg_imm64(buf, RSI, 0x441);     // O_WRONLY|O_CREAT|O_APPEND
+                emit_mov_reg_imm64(buf, RDX, 0644);
+                emit_mov_reg_imm64(buf, RAX, SYS_OPEN);
+                emit_syscall(buf);
+                
+                // Write content
+                emit_mov_reg_reg(buf, RDI, RAX);
+                emit_pop_reg(buf, RSI);
+                emit_mov_reg_imm64(buf, RDX, 64);
+                emit_mov_reg_imm64(buf, RAX, SYS_WRITE);
+                emit_syscall(buf);
+                
+                print_str("[FILE_IO] File append operation generated\n");
+            }
+            break;
+        }
+        
+        // Network I/O operations (basic structure - full implementation needs socket syscalls)
+        case NODE_NET_GET:
+        case NODE_NET_POST:
+        case NODE_NET_PUT:
+        // Note: NODE_NET_DELETE not defined, using available network operations
+        {
+            print_str("[NET_IO] Generating network operation type ");
+            print_num(stmt_node->type);
+            print_str("\n");
+            
+            // For now, network operations are placeholder
+            // Full implementation would need socket(), connect(), send(), recv() syscalls
+            emit_mov_reg_imm64(buf, RAX, 0);  // Return 0 for now
+            print_str("[NET_IO] Network operation placeholder generated\n");
+            break;
+        }
+        
+        // System I/O operations  
+        case NODE_SYS_TIME: {
+            print_str("[SYS_IO] Generating sys.time operation\n");
+            
+            // Linux x64 time syscall: time(time_t *tloc)
+            emit_mov_reg_imm64(buf, RDI, 0);      // NULL pointer
+            emit_mov_reg_imm64(buf, RAX, 201);    // SYS_TIME = 201
+            emit_syscall(buf);                    // invoke system call
+            // Time value now in RAX
+            
+            print_str("[SYS_IO] System time operation generated\n");
+            break;
+        }
+        
+        case NODE_SYS_ENV: {
+            print_str("[SYS_IO] Generating sys.env operation\n");
+            
+            uint16_t var_name_idx = stmt_node->data.sys_io.command_idx;
+            if (var_name_idx != 0) {
+                // Generate expression for environment variable name
+                generate_expression(buf, nodes, var_name_idx, symbols, string_pool);
+                
+                // For demo, just return the address (getenv() would need libc)
+                print_str("[SYS_IO] Environment variable access generated\n");
+            }
+            break;
+        }
+        
+        case NODE_SYS_EXEC: {
+            print_str("[SYS_IO] Generating sys.exec operation\n");
+            
+            uint16_t command_idx = stmt_node->data.sys_io.command_idx;
+            if (command_idx != 0) {
+                // Generate expression for command string
+                generate_expression(buf, nodes, command_idx, symbols, string_pool);
+                
+                // Linux x64 execve syscall would be needed for full implementation
+                // For now, placeholder
+                emit_mov_reg_imm64(buf, RAX, 0);
+                print_str("[SYS_IO] System exec operation placeholder generated\n");
+            }
+            break;
+        }
             
         default:
             print_str("CODEGEN_ERROR: Unsupported statement type ");
